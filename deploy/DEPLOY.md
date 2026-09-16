@@ -36,8 +36,8 @@ was not edited — the fleet line simply subscribes to it alongside the new one.
 ## Why playback is proxied
 
 `XUI_PUBLIC_BASE` points at `https://ott.example.com/stream`, not at the
-panel's IP. This looks like proxying video, and it is not: **all 4731 streams
-on the panel are `direct_source=1`**, so the panel only ever answers with a
+panel's IP. This looks like proxying video, and it is not: **every stream on
+the panel is `direct_source=1`**, so the panel only ever answers with a
 302 and the box fetches the video straight from the upstream CDN. nginx carries
 a redirect header, not a video stream.
 
@@ -48,11 +48,47 @@ It buys two things:
 2. The page is HTTPS. On-demand upstreams are HTTPS too, so routing the first
    hop through TLS makes film and series playback work in an ordinary browser.
 
-Live channels still end at `http://cdn-live.example-upstream.net:8807/...`, which no amount of
-proxying fixes — that CDN has no TLS. Browsers block it; the APK's WebView is
-built with `MIXED_CONTENT_ALWAYS_ALLOW` and plays it. **Live TV therefore works
-on the boxes and not in a desktop browser.** If that ever needs to change, the
-upstream provider has to serve HTTPS.
+Live channels still end at `http://cdn-live.example-upstream.net:8807/...` — that CDN has no TLS,
+and no amount of proxying the *first* hop fixes the redirect's destination. The
+APK's WebView is built with `MIXED_CONTENT_ALWAYS_ALLOW` and follows it; a
+desktop browser refuses. That is what `relay.js` is for, and live now plays in
+a browser too — see **Live over HTTPS: what was actually wrong** further down.
+The relay is opt-in and browser-only: **the boxes keep taking the redirect, so
+the fleet's video never touches this VPS.**
+
+## Pointing at a different panel
+
+Nothing here is XUI.one-specific. Content comes over the **stock Xtream Codes
+API** — `player_api.php`, plus the `/live/ /movie/ /series/` URL shapes — so any
+Xtream-compatible panel works. Four places carry the panel's address, and
+missing one means no picture:
+
+| Where | What |
+| --- | --- |
+| nginx vhost, `location /stream/` | `proxy_pass` **and** `proxy_set_header Host` |
+| `.env` → `XUI_BASE` | how this service reaches the panel |
+| `.env` → `XUI_PUBLIC_BASE` | usually unchanged — it points at `/stream/` above, not at the panel |
+| collector `.env` → `XUI_DB_HOST`, `PANEL_REFRESH_CMD` | see below |
+
+Then on the panel itself: its **own** `url`/`port` setting, and the
+`servers` row where `is_main=1`. Those two are what `server_info` reports and
+what playback URLs are built from — leave them and every box still calls the
+old address.
+
+Two things do **not** move:
+
+1. **The collector only speaks XUI.one.** It writes the panel's MySQL tables
+   directly and then triggers the panel's own `cache_engine.php`; it does not
+   use the API. Pointing KDTV at someone else's panel means giving up
+   collection — their catalogue, their call.
+2. **One panel per KDTV server.** `config.xui.base` is global. *Lines* are
+   per-property; the panel address is not. Per-property panels means moving
+   the base into the properties table — a code change, not a setting.
+
+Also worth knowing before promising a room count: a property's rooms all share
+**one line**, so the line's `max_connections` is the ceiling on simultaneous
+viewers. Ours is set to 500. A line bought from an IPTV reseller is typically
+1–5, which fails on the second room.
 
 ## Operating it
 
