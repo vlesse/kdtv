@@ -1,4 +1,4 @@
-package com.wewatch.tv
+package com.kdtv.tv
 
 import android.content.BroadcastReceiver
 import android.content.Context

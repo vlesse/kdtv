@@ -121,7 +121,9 @@
       (function () {
         var id = '';
         try {
-          id = (window.WeWatchShell && window.WeWatchShell.deviceId()) || '';
+          // 新旧两个桥名都认 —— 网页和 APK 不会同时更新，理由见 api.ts。
+          var bridge = window.KDTVShell || window.WeWatchShell;
+          id = (bridge && bridge.deviceId()) || '';
         } catch (e) {
           /* 桥在但不高兴，当作没有 */
         }

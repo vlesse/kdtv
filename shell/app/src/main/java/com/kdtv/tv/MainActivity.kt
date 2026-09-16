@@ -1,4 +1,4 @@
-package com.wewatch.tv
+package com.kdtv.tv
 
 import android.annotation.SuppressLint
 import android.net.Uri
@@ -61,7 +61,7 @@ class MainActivity : AppCompatActivity() {
         // Registered BEFORE the first load, so the bridge already exists when
         // the page's own scripts run. This is the whole point: identity has to
         // be readable synchronously at boot, not pushed in afterwards.
-        web.addJavascriptInterface(Identity(), "WeWatchShell")
+        web.addJavascriptInterface(Identity(), "KDTVShell")
 
         web.webChromeClient = WebChromeClient()
         web.webViewClient = object : WebViewClient() {

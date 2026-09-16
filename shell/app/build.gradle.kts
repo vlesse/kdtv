@@ -26,26 +26,30 @@ val keystoreProps = Properties().apply {
 }
 
 android {
-    namespace = "com.wewatch.tv"
+    namespace = "com.kdtv.tv"
     compileSdk = 35
 
     defaultConfig {
         /*
-         * 包名不跟着产品改名走。
+         * 包名从今天起冻结。
          *
-         * 产品叫 KDTV 了，但包名是「这台盒子上的这个应用」的身份，和签名一起
-         * 决定了升级能不能覆盖。改成 com.kdtv.tv 之后，对每一台已经装了的电视
-         * 来说那是**另一个应用**：老的卸不掉、新的装上去是第二个图标，
-         * 而且 ANDROID_ID 会变，全部设备要重新注册一遍。
+         * 2026-09-16 趁还没有一家酒店上线，从 com.wewatch.tv 改成了 com.kdtv.tv。
+         * **这是最后一次能改。** 包名是「这台盒子上的这个应用」的身份：
+         * 改了之后，对每一台已经装机的电视来说这是**另一个应用** ——
+         * 装不上去、只能先手动卸载旧的。一旦有酒店上线，那就是
+         * 一个房间一个房间地跑。
          *
-         * 客人看到的名字在 res/values/strings.xml 的 app_name 里，那个是 KDTV。
+         * 实测澄清一件事：**ANDROID_ID 不会因为改包名而变**，它跟着签名钥匙走。
+         * 这次改完，盒子报上来的还是原来那个设备号，服务端认得它，不用重新配对。
+         * 真正会断的是 JS 桥的名字（见 web/src/api.ts）—— 那个和网页是一对，
+         * 而网页和 APK 不会同时更新。
          */
-        applicationId = "com.wewatch.tv"
+        applicationId = "com.kdtv.tv"
         // Android 5.0 covers essentially every set-top box still in service.
         minSdk = 21
         targetSdk = 35
-        versionCode = 4
-        versionName = "1.2.1"
+        versionCode = 5
+        versionName = "1.3.0"
 
         // The ONLY address burned into the app. Everything else - the line,
         // the room, the stream URLs - is fetched from here at boot, which is

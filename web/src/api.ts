@@ -180,17 +180,20 @@ interface ShellBridge {
 /**
  * 盒子注入进来的身份桥。
  *
- * **这个名字不能跟着产品改名一起改。** 产品叫 KDTV 了，但这个名字是
- * 已经装在客人电视上的那个 APK 注入的 —— 网页这边改成 `KDTVShell`，
- * 而盒子里还是旧包的话，`shell()` 直接返回 null，设备号拿不到，
- * 每一个内容请求都会 403。换句话说：**改这个名字要先让每一台电视都换包**，
- * 而这正是薄壳架构极力避免的事。
+ * **两个名字都认，旧的那个是过渡用的。**
  *
- * 同理不能改的还有安卓包名 `com.wewatch.tv`：包名和签名是一台盒子上
- * 「这个应用」的身份，改了等于是另一个应用，老的卸不掉、升不上去。
+ * 2026-09-16 产品改名 KDTV，桥名从 `WeWatchShell` 改成了 `KDTVShell`。
+ * 但网页是服务端下发的、APK 是装在盒子上的，两者**不会同时更新** ——
+ * 手里还装着旧包的测试机一拿到新网页，如果这里只认新名字，
+ * `shell()` 就返回 null，设备号拿不到，每一个内容请求都会 403，
+ * 而屏幕上只会显示「连接失败」，看不出是改名引起的。
+ *
+ * 所以先两个都认。等所有盒子都换成新包之后，可以把 `WeWatchShell` 删掉 ——
+ * 在那之前删，就是给自己制造一批打不开的电视。
  */
 function shell(): ShellBridge | null {
-  const b = (window as any).WeWatchShell;
+  const w = window as any;
+  const b = w.KDTVShell ?? w.WeWatchShell;
   return b && typeof b.deviceId === 'function' ? (b as ShellBridge) : null;
 }
 
