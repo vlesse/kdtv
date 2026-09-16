@@ -1,0 +1,2499 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>KDTV 后台 · 首页设置</title>
+    <link rel="icon" href="data:," />
+    <style>
+      :root {
+        --bg: #0d1117;
+        --panel: #161b22;
+        --line: #262d38;
+        --text: #e6edf3;
+        --muted: #8b949e;
+        --accent: #2f81f7;
+        --danger: #da3633;
+        --ok: #2ea043;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font: 14px/1.6 system-ui, "Microsoft YaHei", "PingFang SC", sans-serif;
+      }
+      a { color: var(--accent); }
+      .wrap { max-width: 1000px; margin: 0 auto; padding: 24px 20px 80px; }
+      header {
+        display: flex; align-items: baseline; gap: 12px;
+        border-bottom: 1px solid var(--line); padding-bottom: 14px; margin-bottom: 24px;
+      }
+      header h1 { font-size: 18px; margin: 0; }
+      header .sub { color: var(--muted); font-size: 13px; }
+      header .right { margin-left: auto; }
+
+      section {
+        background: var(--panel); border: 1px solid var(--line);
+        border-radius: 10px; padding: 18px 20px; margin-bottom: 18px;
+      }
+      section h2 { font-size: 15px; margin: 0 0 4px; }
+      section .hint { color: var(--muted); font-size: 12.5px; margin: 0 0 14px; }
+
+      label { display: block; font-size: 13px; color: var(--muted); margin: 12px 0 5px; }
+      input[type='text'], input[type='password'] {
+        width: 100%; padding: 8px 10px; border-radius: 6px;
+        border: 1px solid var(--line); background: #0d1117; color: var(--text);
+        font: inherit;
+      }
+      input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+      button {
+        font: inherit; padding: 8px 16px; border-radius: 6px; cursor: pointer;
+        border: 1px solid var(--line); background: #21262d; color: var(--text);
+      }
+      button:hover { border-color: #3d444d; }
+      button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+      button.ghost { background: transparent; }
+      button.danger { color: #ff7b72; }
+      button:disabled { opacity: .5; cursor: default; }
+      .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
+      /* ---- current background ---- */
+      .current { display: flex; gap: 18px; align-items: flex-start; flex-wrap: wrap; }
+      .preview {
+        width: 320px; aspect-ratio: 16/9; border-radius: 8px; overflow: hidden;
+        border: 1px solid var(--line); background: #000;
+        display: grid; place-items: center; color: var(--muted); font-size: 12px;
+      }
+      .preview img, .preview video { width: 100%; height: 100%; object-fit: cover; }
+      .current dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; font-size: 13px; }
+      .current dt { color: var(--muted); }
+      .current dd { margin: 0; word-break: break-all; }
+
+      /* ---- drop zone ---- */
+      .drop {
+        border: 1.5px dashed #30363d; border-radius: 10px; padding: 26px;
+        text-align: center; color: var(--muted); cursor: pointer; transition: .15s;
+      }
+      .drop.over, .drop:hover { border-color: var(--accent); color: var(--text); background: #0d1117; }
+      /* Upload findings. Colour carries the severity, but every row also
+         states the problem in words - a hotel operator should not have to
+         learn what amber means here. */
+      .checks {
+        list-style: none;
+        margin: 12px 0 0;
+        padding: 0;
+        display: grid;
+        gap: 6px;
+      }
+
+      .checks li {
+        padding: 9px 12px 9px 32px;
+        border-radius: 8px;
+        font-size: 13px;
+        line-height: 1.55;
+        position: relative;
+        border: 1px solid transparent;
+      }
+
+      .checks li::before {
+        position: absolute;
+        left: 11px;
+        top: 9px;
+        font-weight: 700;
+      }
+
+      .checks li.ok {
+        background: rgba(52, 168, 108, 0.1);
+        border-color: rgba(52, 168, 108, 0.3);
+        color: #a8e6c4;
+      }
+      .checks li.ok::before {
+        content: '✓';
+      }
+
+      .checks li.warn {
+        background: rgba(224, 168, 46, 0.12);
+        border-color: rgba(224, 168, 46, 0.34);
+        color: #f0d089;
+      }
+      .checks li.warn::before {
+        content: '!';
+      }
+
+      .checks li.bad {
+        background: rgba(226, 86, 86, 0.12);
+        border-color: rgba(226, 86, 86, 0.36);
+        color: #f2acac;
+      }
+      .checks li.bad::before {
+        content: '×';
+      }
+
+      .bar { height: 6px; border-radius: 3px; background: #21262d; overflow: hidden; margin-top: 12px; }
+      .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+
+      /* ---- library ---- */
+      .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px; }
+      .card { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: #0d1117; }
+      .card.active { border-color: var(--ok); box-shadow: 0 0 0 1px var(--ok); }
+      .card .thumb { aspect-ratio: 16/9; background: #000; display: grid; place-items: center; }
+      .card .thumb img, .card .thumb video { width: 100%; height: 100%; object-fit: cover; }
+      .card .meta { padding: 8px 10px; font-size: 12px; }
+      .card .name { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .card .acts { display: flex; gap: 6px; padding: 0 10px 10px; }
+      .card .acts button { flex: 1; padding: 5px 6px; font-size: 12px; }
+      .tag { font-size: 11px; padding: 1px 6px; border-radius: 10px; background: #21262d; color: var(--muted); }
+      .tag.video { background: #2d2417; color: #e3b341; }
+      .tag.on { background: #12261a; color: #3fb950; }
+
+      .toast {
+        position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%);
+        background: #1f6feb; color: #fff; padding: 10px 18px; border-radius: 8px;
+        font-size: 13px; opacity: 0; pointer-events: none; transition: opacity .2s;
+        max-width: 90vw;
+      }
+      .toast.show { opacity: 1; }
+      .toast.bad { background: var(--danger); }
+
+      textarea {
+        width: 100%; min-height: 220px; resize: vertical;
+        padding: 10px 12px; border-radius: 6px;
+        border: 1px solid var(--line); background: #0d1117; color: var(--text);
+        font: 12.5px/1.6 ui-monospace, Menlo, Consolas, monospace;
+      }
+      select {
+        padding: 8px 10px; border-radius: 6px; max-width: 220px;
+        border: 1px solid var(--line); background: #0d1117; color: var(--text);
+        font: inherit;
+      }
+      code { background: #0d1117; padding: 1px 5px; border-radius: 4px; }
+
+      /* ---- rooms and devices ---- */
+      .scroll { overflow-x: auto; margin: 0 -20px; padding: 0 20px; }
+      .tbl { width: 100%; min-width: 860px; border-collapse: collapse; font-size: 13px; }
+      .tbl th {
+        text-align: left; font-weight: 500; color: var(--muted); font-size: 12px;
+        padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap;
+      }
+      .tbl td { padding: 7px 8px; border-bottom: 1px solid #1b2029; vertical-align: middle; }
+      .tbl tr:hover td { background: #11161d; }
+      .tbl input[type='text'] { padding: 5px 7px; min-width: 90px; }
+      .tbl .acts { display: flex; gap: 6px; white-space: nowrap; }
+      .tbl td.line { white-space: nowrap; }
+      .tbl .acts button { padding: 4px 10px; font-size: 12px; }
+      .mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11.5px; color: var(--muted); }
+      .pill { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: #21262d; color: var(--muted); white-space: nowrap; }
+      .pill.live { background: #12261a; color: #3fb950; }
+      .pill.wait { background: #2d2417; color: #e3b341; }
+
+      /* ---- login ---- */
+      #login { max-width: 340px; margin: 14vh auto; }
+      .note { color: var(--muted); font-size: 12.5px; margin-top: 14px; line-height: 1.7; }
+      .note code { background: #0d1117; padding: 1px 5px; border-radius: 4px; }
+    </style>
+  </head>
+  <body>
+    <!-- ------------------------------------------------------------ login -->
+    <div id="login" hidden>
+      <section>
+        <h2>KDTV 后台</h2>
+        <p class="hint">输入后台密码</p>
+        <input id="pw" type="password" autocomplete="current-password" placeholder="密码" />
+        <div class="row" style="margin-top: 14px">
+          <button class="primary" id="doLogin">进入</button>
+        </div>
+        <p class="note">
+          密码是服务器 <code>.env</code> 里的 <code>ADMIN_TOKEN</code>。没设过的话，
+          第一次启动时会自动生成一个并写进日志：<br />
+          <code>docker compose logs bff | grep -i token</code>
+        </p>
+      </section>
+    </div>
+
+    <!-- -------------------------------------------------------------- app -->
+    <div class="wrap" id="app" hidden>
+      <header>
+        <h1 id="pageTitle">KDTV 后台</h1>
+        <select id="propPick" style="max-width:240px" hidden></select>
+        <span class="sub" id="stat"></span>
+        <span class="right">
+          <button class="ghost" id="manageProps" hidden>管理酒店</button>
+          <button class="ghost" id="logout">退出</button>
+        </span>
+      </header>
+
+      <section id="propsSection" hidden>
+        <h2>酒店</h2>
+        <p class="hint">
+          十家酒店共用这一台服务器和同一个 APK。盒子插电开机时服务端认不出它是谁的，
+          所以要么<strong>在这里先设一个「新盒子默认进哪家」</strong>（一次铺一家时最省事，
+          铺完记得清掉），要么让它显示配对码、在「房间与设备」里逐台划。
+        </p>
+        <div class="scroll">
+          <table class="tbl">
+            <thead>
+              <tr>
+                <th>酒店</th><th>标识</th><th>线路</th><th>盒子</th>
+                <th>在住</th><th>待处理</th><th>后台登录</th><th></th>
+              </tr>
+            </thead>
+            <tbody id="propRows"></tbody>
+          </table>
+        </div>
+
+        <label style="margin-top:18px">新增酒店</label>
+        <div class="row">
+          <input id="newPropName" type="text" placeholder="酒店名字，如 吴哥大酒店" style="flex:1;min-width:180px" />
+          <input id="newPropSlug" type="text" placeholder="标识，如 angkor" style="width:160px" />
+          <button class="primary" id="addProp">建一家</button>
+        </div>
+
+        <label style="margin-top:18px">新盒子默认进哪家</label>
+        <p class="hint">
+          设上之后，没见过的盒子一开机就自动归到这家，现场不用输任何东西。
+          <strong>铺完这一家一定要清掉</strong> —— 留着的话下一家的盒子会进错门。
+        </p>
+        <div class="row">
+          <select id="defaultProp" style="max-width:240px"></select>
+          <button id="saveDefaultProp">保存</button>
+          <span class="hint" style="margin:0" id="defaultPropState"></span>
+        </div>
+      </section>
+
+      <section>
+        <h2>房间与设备</h2>
+        <p class="hint">
+          这里没有「注册用户」——<strong>一个房间就是一个用户</strong>。客人不注册、不登录、不记密码，
+          换一拨人也不用改任何东西。真正决定一台电视能看到什么的是三件事，分开管：
+        </p>
+        <p class="hint">
+          <strong>① 线路</strong>　盒子走哪个 XUI 账号，决定<strong>片单</strong>。
+          两层楼绑两条不同线路，就是两套频道 —— 这是「想让谁看什么」最粗的一刀。<br />
+          <strong>② 房间</strong>　盒子装在哪、住的是谁，决定<strong>欢迎语、通知、点餐从哪个房间来</strong>。
+          房间号直接填，不用先去别处建。<br />
+          <strong>③ 成人授权</strong>　按盒子给，默认关，在下面「成人板块」里勾。
+        </p>
+        <p class="hint">
+          <strong>退房会一并收回成人授权</strong>并清掉客人姓名。上一个客人被放开过的东西，
+          不会留给下一个客人 —— 前台不需要记得这件事。
+        </p>
+
+        <div class="row" style="margin-bottom: 12px">
+          <input id="roomSearch" type="text" placeholder="搜房间号 / 备注 / 客人 / 设备号" style="flex:1;min-width:180px" />
+          <select id="roomFilter">
+            <option value="all">全部</option>
+            <option value="unassigned">未分房</option>
+            <option value="unbound">待配对</option>
+            <option value="checkedin">已入住</option>
+          </select>
+          <button id="reloadRooms">刷新</button>
+          <span class="hint" style="margin:0" id="roomStat"></span>
+        </div>
+
+        <div class="scroll">
+          <table class="tbl">
+            <thead>
+              <tr>
+                <th>房间号</th>
+                <th>备注 / 位置</th>
+                <th>住客</th>
+                <th>线路</th>
+                <th>状态</th>
+                <th>最后开机</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="roomRows"></tbody>
+          </table>
+        </div>
+        <p class="hint" id="roomEmpty" style="margin-top: 12px"></p>
+
+        <div id="emptyRooms" hidden>
+          <label style="margin-top: 18px">没有盒子的房间</label>
+          <p class="hint">
+            建过、但现在一台设备都不在里面的房间号。多半是打错的，或者电视搬走了。
+            删掉只是删这个房间号和它的通知，不影响任何盒子。
+          </p>
+          <div class="row" id="emptyRoomList"></div>
+        </div>
+      </section>
+
+      <section>
+        <h2>当前背景</h2>
+        <p class="hint">改完立刻生效，电视上退回首页或重进 App 就能看到，不用重装 APK。</p>
+        <div class="current">
+          <div class="preview" id="preview">未设置</div>
+          <div>
+            <dl id="bgInfo"></dl>
+            <div class="row" style="margin-top: 14px">
+              <button class="ghost" id="useNone">恢复默认渐变</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>上传图片或视频</h2>
+        <p class="hint">
+          图片 JPG / PNG / WebP，视频 MP4 / WebM。视频背景是<b>静音循环</b>播放的。<br />
+          做背景的片子：<b>1920×1080</b>、<b>15～30 秒</b>、<b>10MB 以内</b>、<b>去掉音轨</b>；
+          导出 MP4 时务必勾上 <b>Web Optimized / faststart</b>，否则电视要把整个文件下完才出画面。
+          传完这里会逐条检查并告诉你哪项不合格。
+        </p>
+        <div class="drop" id="drop">
+          点这里选文件，或把文件拖进来<br />
+          <span id="limit"></span>
+        </div>
+        <div class="bar" id="bar" hidden><i></i></div>
+        <!-- Upload findings live here rather than in a toast: a toast is gone
+             before an operator has finished reading four lines of them. -->
+        <ul class="checks" id="checks" hidden></ul>
+        <input type="file" id="file" accept="image/*,video/*" hidden />
+      </section>
+
+      <section>
+        <h2>已上传的素材</h2>
+        <p class="hint">点「设为背景」切换。删除会同时删掉服务器上的文件。</p>
+        <div class="grid" id="lib"></div>
+      </section>
+
+      <section>
+        <h2>用外部链接</h2>
+        <p class="hint">
+          不想上传就填个直链。<b>必须是 https</b> —— 电视端页面是 https，
+          http 的图片会被当成混合内容直接拦掉，屏幕上什么都不会出现。
+        </p>
+        <label for="extUrl">图片或视频地址</label>
+        <input id="extUrl" type="text" placeholder="https://example.com/lobby.jpg" />
+        <div class="row" style="margin-top: 12px">
+          <button id="extImg">设为图片背景</button>
+          <button id="extVid">设为视频背景</button>
+        </div>
+      </section>
+
+      <section>
+        <h2>品牌 / 外观</h2>
+        <p class="hint">
+          开机画面、播放器加载图、Logo、主色。先在上面「上传图片或视频」传好，
+          再回到这里从下拉里挑，或者直接填 https 链接。
+        </p>
+
+        <label for="splashUrl">开机画面背景</label>
+        <div class="row">
+          <select id="splashPick"></select>
+          <input id="splashUrl" type="text" placeholder="留空 = 用首页背景" style="flex:1;min-width:220px" />
+        </div>
+
+        <label for="loadingUrl">播放器加载背景（拉信源时那几秒）</label>
+        <div class="row">
+          <select id="loadingPick"></select>
+          <input id="loadingUrl" type="text" placeholder="留空 = 用内置深色渐变" style="flex:1;min-width:220px" />
+        </div>
+
+        <label for="logoUrl">Logo（开机画面 + 关于我们）</label>
+        <div class="row">
+          <select id="logoPick"></select>
+          <input id="logoUrl" type="text" placeholder="建议透明底 PNG" style="flex:1;min-width:220px" />
+        </div>
+
+        <label for="accent">主色</label>
+        <div class="row">
+          <input id="accentPicker" type="color" style="width:52px;height:36px;padding:2px" />
+          <input id="accent" type="text" placeholder="#ff2d55" style="flex:1;min-width:160px" />
+        </div>
+
+        <div class="row" style="margin-top: 16px">
+          <button class="primary" id="saveBrand">保存</button>
+        </div>
+      </section>
+
+      <section>
+        <h2>自定义 CSS</h2>
+        <p class="hint">
+          上面那些按钮盖不住的地方，在这里直接写 CSS 改。这份样式表在电视端<b>最后加载</b>，
+          所以能覆盖掉我们自己的样式，不用加 <code>!important</code>。
+          写错了不会让 App 崩，最多是某处样子不对 —— 清空这里就还原。
+        </p>
+        <textarea id="customCss" spellcheck="false" placeholder=".tile-label { letter-spacing: .05em }"></textarea>
+        <div class="row" style="margin-top: 12px">
+          <button class="primary" id="saveCss">保存</button>
+          <button class="ghost" id="clearCss">清空</button>
+          <span class="hint" style="margin:0" id="cssLen"></span>
+        </div>
+      </section>
+
+      <section>
+        <h2>文字</h2>
+        <p class="hint">留空就用内置的多语言默认值（中/英/柬/印尼会各自翻译）。</p>
+        <label for="welcomeText">欢迎语（覆盖「欢迎光临」）</label>
+        <input id="welcomeText" type="text" placeholder="欢迎光临" />
+        <label for="propertyName">物业名称（关于我们页）</label>
+        <input id="propertyName" type="text" placeholder="KDTV" />
+        <label for="supportContact">客服电话 / 分机</label>
+        <input id="supportContact" type="text" placeholder="8888" />
+        <div class="row" style="margin-top: 14px">
+          <button class="primary" id="saveText">保存</button>
+        </div>
+      </section>
+
+      <section>
+        <h2>电视端</h2>
+        <p class="hint">
+          整店下发到每台盒子，改完盒子下次开机或下次切台生效。
+        </p>
+
+        <label>界面模板</label>
+        <p class="hint">
+          两套没有好坏之分，看客人是谁：<strong>度假酒店</strong>的客人会去翻点播和点餐，
+          门户更合适；<strong>商务酒店和长住公寓</strong>的客人进门就是开电视看新闻，
+          让他多按两下都是多余的。同一个 APP，哪家用哪套这里选。
+        </p>
+        <div class="row">
+          <select id="tvTemplate" style="max-width:280px">
+            <option value="portal">酒店门户 —— 开机是宫格首页</option>
+            <option value="live">直播优先 —— 开机直接进直播全屏</option>
+          </select>
+          <span class="hint" style="margin:0" id="tvTemplateHint"></span>
+        </div>
+
+        <label style="margin-top:18px">直播模式（默认值）</label>
+        <p class="hint">
+          缓冲越长越不卡，也越落后于直播。这里定的是默认值 ——
+          某个房间的客人在播放器里自己换过档，以他自己的为准。
+        </p>
+        <div class="row">
+          <select id="tvProfile" style="max-width:220px">
+            <option value="stable">流畅优先（缓冲 30 秒）</option>
+            <option value="balanced">标准（缓冲 12 秒）</option>
+            <option value="low">低延迟（缓冲 6 秒）</option>
+          </select>
+        </div>
+
+        <label style="margin-top:18px">排查叠层</label>
+        <p class="hint">
+          打开后每台电视右上角显示码率、带宽、缓冲、丢帧、直连还是走中继。
+          <strong>上门排查前打开，走之前关掉</strong> ——
+          它能分清「上行不够」「盒子解不动」「源坏了」这三种，光看画面分不清。
+        </p>
+        <div class="row">
+          <button id="toggleDiag">开启排查叠层</button>
+          <span class="hint" style="margin:0" id="tvState"></span>
+        </div>
+      </section>
+
+      <section>
+        <h2>各页面背景</h2>
+        <p class="hint">
+          首页背景在上面单独设（首页可以放视频）。这里是<strong>其他几个页面</strong>的背景，
+          留空就跟首页用同一张。只能用图片 —— 这几个页面下一步就是播放器，
+          再挂一个视频会跟播放器抢盒子的解码器。
+        </p>
+
+        <label for="sceneLive">电视直播</label>
+        <div class="row">
+          <input id="sceneLive" type="text" placeholder="/media/… 或 https://…" style="flex:1;min-width:220px" />
+          <select id="sceneLivePick"></select>
+        </div>
+
+        <label for="sceneVod">影视点播</label>
+        <div class="row">
+          <input id="sceneVod" type="text" placeholder="/media/… 或 https://…" style="flex:1;min-width:220px" />
+          <select id="sceneVodPick"></select>
+        </div>
+
+        <label for="sceneService">客房服务</label>
+        <div class="row">
+          <input id="sceneService" type="text" placeholder="/media/… 或 https://…" style="flex:1;min-width:220px" />
+          <select id="sceneServicePick"></select>
+        </div>
+
+        <div class="row" style="margin-top:14px">
+          <button class="primary" id="saveScenes">保存页面背景</button>
+          <button id="clearScenes">全部清空</button>
+        </div>
+      </section>
+
+      <section>
+        <h2>客房服务 <span class="pill" id="svcPending"></span></h2>
+        <p class="hint">
+          客人在电视上点的单会落到这里。<strong>前台只看这一页就够了</strong> ——
+          哪个房间、点了什么、付没付、处理到哪一步。
+        </p>
+        <p class="hint">
+          站在柜台前用手机的话，开 <a href="/desk/" target="_blank" rel="noopener">/desk/</a> ——
+          同一个口令登录，只有房间和订单两件事，按钮都是拇指点得中的大小。
+          把它加到手机主屏，用起来跟一个 App 一样。
+        </p>
+
+        <label>订单</label>
+        <div class="scroll">
+          <table class="tbl">
+            <thead>
+              <tr>
+                <th>时间</th><th>房间</th><th>内容</th><th>金额</th><th>付款</th><th>状态</th><th></th>
+              </tr>
+            </thead>
+            <tbody id="svcOrders"></tbody>
+          </table>
+        </div>
+        <p class="hint" id="svcOrdersEmpty" style="margin-top:10px"></p>
+
+        <label style="margin-top:22px">菜单</label>
+        <p class="hint">
+          开机时种进去的是一份印尼宿舍的菜单（Nasi Goreng、单位 IDR）。
+          <strong>换到别的场地要先在这里改掉</strong>，否则客人看到的是一份看不懂也点不了的东西。
+          英文名是订单上记的那个名字，必填；其它三种语言留空就自动回退到英文。
+        </p>
+        <p class="checks" id="svcMoney" hidden></p>
+        <div class="row" style="margin-bottom:10px">
+          <span class="hint" style="margin:0">整份菜单的币种</span>
+          <input id="svcCurrency" type="text" style="width:90px" placeholder="USD" />
+          <button id="saveSvcCurrency">全部改成这个币种</button>
+          <button class="primary" id="addSvcItem">＋ 加一项</button>
+        </div>
+        <div class="scroll">
+          <table class="tbl">
+            <thead>
+              <tr>
+                <th>分类</th><th>English *</th><th>中文</th><th>ខ្មែរ</th>
+                <th>价格</th><th>排序</th><th>上架</th><th></th>
+              </tr>
+            </thead>
+            <tbody id="svcMenu"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section>
+        <h2>收款与计费</h2>
+        <p class="hint">
+          走 Jeepay。<strong>先填通道，再决定谁出钱。</strong>
+          通道没配好之前，下面的「客人付费」开关点了也不会真的上锁 ——
+          收不了款还把内容锁上，等于让整栋楼的电视都打不开，而客人连付钱的办法都没有。
+        </p>
+
+        <label>Jeepay 通道</label>
+        <div class="row" id="payScopeRow" style="margin-bottom:10px" hidden>
+          <button id="payScopeHotel" class="primary">这家酒店（客人点餐）</button>
+          <button id="payScopePlatform">平台（观看权 + 服务费）</button>
+        </div>
+        <p class="hint" id="payScopeHint" style="margin:0 0 10px"></p>
+        <div class="row">
+          <input id="payGateway" type="text" placeholder="网关地址，如 https://pay.example.com" style="flex:1;min-width:240px" />
+          <input id="payMchNo" type="text" placeholder="商户号 mchNo" style="width:170px" />
+        </div>
+        <div class="row" style="margin-top:8px">
+          <input id="payAppId" type="text" placeholder="应用 ID appId" style="width:190px" />
+          <input id="payAppSecret" type="password" placeholder="应用密钥 appSecret" style="flex:1;min-width:190px" autocomplete="new-password" />
+          <input id="payWayCode" type="text" placeholder="支付方式 wayCode" style="width:150px" />
+          <input id="payCurrency" type="text" placeholder="币种 USD" style="width:100px" />
+        </div>
+        <p class="hint" style="margin:8px 0 0" id="paySecretState"></p>
+        <div class="row" style="margin-top:12px">
+          <button class="primary" id="savePayChannel">保存通道</button>
+          <button id="probePay">测一下通不通</button>
+          <button id="togglePay">开启收款</button>
+          <span class="hint" style="margin:0" id="payState"></span>
+        </div>
+
+        <label style="margin-top:22px">谁出钱</label>
+        <div class="row">
+          <select id="billMode">
+            <option value="property">酒店付费 —— 房间免费</option>
+            <option value="guest">客人付费 —— 住客自己买</option>
+          </select>
+          <span class="hint" style="margin:0" id="billState"></span>
+        </div>
+
+        <div id="billProperty">
+          <p class="hint" style="margin-top:12px">
+            服务费到期后<strong>电视不会黑屏</strong>，只会从「免费」变成「客人自己买」。
+            线下收了现金也能在这里直接加天数。
+          </p>
+          <div class="row">
+            <button id="payInvoice">扫码续费</button>
+            <input id="billAddDays" type="text" placeholder="手动加/减天数，如 30 或 -7" style="width:200px" />
+            <button id="saveBillDays">记进去</button>
+          </div>
+        </div>
+
+        <div id="billGuest" hidden>
+          <p class="hint" style="margin-top:12px">
+            勾上的区域要买了才能看。<strong>直播默认不勾</strong> ——
+            一台打开只有黑屏的电视，客人只会以为是坏的，不会想到要付钱。
+          </p>
+          <div class="row" id="billSections"></div>
+          <label style="margin-top:14px">卖给客人的档位（一行一个：天数 价格）</label>
+          <textarea id="billGuestPlans" spellcheck="false" style="min-height:90px" placeholder="1 2&#10;3 5&#10;7 10"></textarea>
+          <div class="row" style="margin-top:10px">
+            <button class="primary" id="saveBillGuest">保存档位</button>
+          </div>
+        </div>
+
+        <label style="margin-top:22px">最近的收款</label>
+        <p class="hint">
+          客人说付了但电视上没反应 —— 按「立即对账」。它会挨个去问网关，
+          把回调丢掉的那几笔补回来。
+        </p>
+        <div class="row" style="margin-bottom:10px">
+          <button id="doReconcile">立即对账</button>
+          <span class="hint" style="margin:0" id="reconcileState"></span>
+        </div>
+        <div class="scroll">
+          <table class="tbl">
+            <thead>
+              <tr><th>时间</th><th>单号</th><th>类型</th><th>说明</th><th>金额</th><th>状态</th></tr>
+            </thead>
+            <tbody id="payRows"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>成人板块</h2>
+        <p class="hint">
+          默认<strong>整体关闭</strong>。打开后仍然是三道门：面板要开、房间要单独授权、遥控器要输 PIN。
+          没授权的房间连这个图标都不会出现，服务端也不会把这些频道发给它 —— 就算有人猜到频道编号直接调接口，也是 403。
+        </p>
+
+        <label for="adultPin">PIN 码（4-8 位数字）</label>
+        <div class="row">
+          <input id="adultPin" type="text" inputmode="numeric" placeholder="留空 = 不改" style="flex:1;min-width:160px" />
+          <button id="saveAdultPin">保存 PIN</button>
+          <span class="hint" style="margin:0" id="adultPinState"></span>
+        </div>
+
+        <label style="margin-top:18px">受限分类（主要方式）</label>
+        <p class="hint">
+          直接勾面板里真实的分类，勾上的就归成人板块管 —— 分类叫什么名字都无所谓。
+          <strong>没勾的一律是普通分类</strong>，会照常出现在所有房间。
+          <span id="adultPickedCount"></span>
+        </p>
+        <div class="row">
+          <button id="loadCats">读取面板分类</button>
+          <button id="pickKeyword" hidden>按关键词全选</button>
+          <button id="clearPicked" hidden>全部取消</button>
+          <button class="primary" id="savePicked" hidden>保存勾选</button>
+        </div>
+        <div id="adultCatList"></div>
+
+        <label for="adultCats" style="margin-top:18px">兜底关键词（一行一个）</label>
+        <p class="hint">
+          只是安全网，防的是<strong>面板新加了分类、还没人来勾</strong>的那段时间。
+          内置认得 adult / xxx / 18+ / porn / 成人 / 情色 等，按名字包含匹配、不分大小写 ——
+          但真实片源很少这么起名（「伦理影片」「日韩无码」一个都不命中），所以别指望它，该勾还是要勾。
+        </p>
+        <textarea id="adultCats" spellcheck="false" placeholder="午夜剧场"></textarea>
+
+        <div class="row" style="margin-top: 14px">
+          <button id="saveAdultCats">保存关键词</button>
+          <button class="primary" id="toggleAdult">开启板块</button>
+          <span class="hint" style="margin:0" id="adultState"></span>
+        </div>
+
+        <label style="margin-top:18px">按房间授权</label>
+        <p class="hint">只有勾上的房间能看到入口；没勾的房间服务端根本不会把这些内容发给它。</p>
+        <div class="row">
+          <button id="allowAllRooms">全部授权</button>
+          <button id="denyAllRooms">全部取消</button>
+        </div>
+        <div id="adultRooms" class="grid"></div>
+      </section>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const KEY = 'wewatch.admin.token';
+      let token = localStorage.getItem(KEY) || '';
+      let state = null;
+
+      function toast(msg, bad) {
+        const el = $('toast');
+        el.textContent = msg;
+        el.className = 'toast show' + (bad ? ' bad' : '');
+        clearTimeout(el._t);
+        // Long messages are the ones worth reading, so give them the time.
+        el._t = setTimeout(() => (el.className = 'toast'), msg.length > 40 ? 7000 : 2600);
+      }
+
+      /*
+       * 当前在管哪一家。
+       *
+       * 酒店管理员永远是自己那一家（服务端不看这个值）。平台管理员必须显式
+       * 指定 —— 十家里改哪一家的背景，不能靠服务端猜。所以除了 /properties
+       * 这类全局路由，其它每一个请求都把它带上。
+       */
+      let scope = 'property';
+      let currentProp = null;
+      let propList = [];
+
+      function withProperty(path) {
+        if (scope !== 'platform' || currentProp == null) return path;
+        if (path.startsWith('/properties')) return path;
+        return path + (path.includes('?') ? '&' : '?') + 'property=' + currentProp;
+      }
+
+      async function api(path, opts = {}) {
+        const res = await fetch('/api/admin' + withProperty(path), {
+          ...opts,
+          headers: {
+            ...(opts.body ? { 'Content-Type': 'application/json' } : {}),
+            Authorization: 'Bearer ' + token,
+            ...(opts.headers || {}),
+          },
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.status === 401) {
+          logout();
+          throw new Error('登录已失效');
+        }
+        if (!res.ok) throw new Error(data.error || '请求失败 ' + res.status);
+        return data;
+      }
+
+      function human(n) {
+        if (n < 1024) return n + ' B';
+        if (n < 1024 * 1024) return (n / 1024).toFixed(0) + ' KB';
+        return (n / 1024 / 1024).toFixed(1) + ' MB';
+      }
+
+      // ------------------------------------------------------------ render
+
+      function renderBackground(home) {
+        const bg = home.background;
+        const box = $('preview');
+        box.innerHTML = '';
+        if (bg.type === 'video' && bg.url) {
+          const v = document.createElement('video');
+          v.src = bg.url;
+          v.muted = true;
+          v.loop = true;
+          v.autoplay = true;
+          v.playsInline = true;
+          box.append(v);
+        } else if (bg.type === 'image' && bg.url) {
+          const img = document.createElement('img');
+          img.src = bg.url;
+          box.append(img);
+        } else {
+          box.textContent = '内置渐变（未设置背景）';
+        }
+
+        const label = { image: '图片', video: '视频', none: '内置渐变' }[bg.type] || bg.type;
+        $('bgInfo').innerHTML = '';
+        const add = (k, v) => {
+          const dt = document.createElement('dt');
+          dt.textContent = k;
+          const dd = document.createElement('dd');
+          dd.textContent = v;
+          $('bgInfo').append(dt, dd);
+        };
+        add('类型', label);
+        if (bg.url) add('地址', bg.url);
+        if (!bg.url && state.envBackgroundUrl) add('注意', '.env 里还有 HOME_BACKGROUND_URL，会被这里的设置覆盖');
+      }
+
+      function renderLibrary() {
+        const lib = $('lib');
+        lib.innerHTML = '';
+        if (!state.media.length) {
+          lib.innerHTML = '<p class="hint" style="margin:0">还没有上传过东西。</p>';
+          return;
+        }
+        const activeUrl = state.home.background.url;
+
+        for (const m of state.media) {
+          const card = document.createElement('div');
+          card.className = 'card' + (m.url === activeUrl ? ' active' : '');
+
+          const thumb = document.createElement('div');
+          thumb.className = 'thumb';
+          if (m.kind === 'video') {
+            const v = document.createElement('video');
+            v.src = m.url;
+            v.muted = true;
+            v.preload = 'metadata';
+            thumb.append(v);
+          } else {
+            const img = document.createElement('img');
+            img.src = m.url;
+            img.loading = 'lazy';
+            thumb.append(img);
+          }
+
+          const meta = document.createElement('div');
+          meta.className = 'meta';
+          const name = document.createElement('div');
+          name.className = 'name';
+          name.textContent = m.original || m.url;
+          name.title = m.original || m.url;
+          const line = document.createElement('div');
+          line.className = 'row';
+          line.style.marginTop = '4px';
+          const tag = document.createElement('span');
+          tag.className = 'tag' + (m.kind === 'video' ? ' video' : '');
+          tag.textContent = m.kind === 'video' ? '视频' : '图片';
+          line.append(tag, Object.assign(document.createElement('span'), {
+            className: 'tag',
+            textContent: human(m.bytes),
+          }));
+          if (m.url === activeUrl) {
+            line.append(Object.assign(document.createElement('span'), {
+              className: 'tag on',
+              textContent: '使用中',
+            }));
+          }
+          meta.append(name, line);
+
+          const acts = document.createElement('div');
+          acts.className = 'acts';
+          const use = document.createElement('button');
+          use.textContent = '设为背景';
+          use.onclick = () => setBackground(m.kind, m.url);
+          const del = document.createElement('button');
+          del.className = 'danger';
+          del.textContent = '删除';
+          del.onclick = () => removeMedia(m);
+          acts.append(use, del);
+
+          card.append(thumb, meta, acts);
+          lib.append(card);
+        }
+      }
+
+      /* Each media dropdown lists what has been uploaded, so an operator picks
+         a background rather than copying a UUID out of the library by hand. */
+      function fillPicker(selectId, inputId) {
+        const sel = $(selectId);
+        const input = $(inputId);
+        sel.innerHTML = '';
+        sel.append(new Option('— 从素材里选 —', ''));
+        for (const m of state.media) {
+          if (m.kind !== 'image') continue;
+          sel.append(new Option(m.original || m.url, m.url));
+        }
+        sel.value = state.media.some((m) => m.url === input.value) ? input.value : '';
+        sel.onchange = () => {
+          if (sel.value) input.value = sel.value;
+        };
+      }
+
+      function renderBranding() {
+        const b = state.home.branding || {};
+        $('splashUrl').value = b.splashUrl || '';
+        $('loadingUrl').value = b.loadingUrl || '';
+        $('logoUrl').value = b.logoUrl || '';
+        $('accent').value = b.accent || '';
+        $('accentPicker').value = b.accent || '#ff2d55';
+        $('customCss').value = b.customCss || '';
+        $('cssLen').textContent = (b.customCss || '').length + ' / 20000 字符';
+        fillPicker('splashPick', 'splashUrl');
+        fillPicker('loadingPick', 'loadingUrl');
+        fillPicker('logoPick', 'logoUrl');
+      }
+
+      function renderTv() {
+        const tv = state?.home?.tv;
+        if (!tv) return;
+        $('tvProfile').value = tv.liveProfile;
+        $('tvTemplate').value = tv.template || 'portal';
+        $('tvTemplateHint').textContent =
+          (tv.template || 'portal') === 'live'
+            ? '客人开机看到的是正在播的台，点播和客房服务在菜单里。'
+            : '客人开机看到的是首页，直播是其中一格。';
+        $('toggleDiag').textContent = tv.diagnostics ? '关闭排查叠层' : '开启排查叠层';
+        $('tvState').textContent = tv.diagnostics
+          ? '正在显示 —— 客人也看得见，别忘了关'
+          : '未显示';
+      }
+
+      async function saveTv(patch, okMsg) {
+        try {
+          const r = await api('/tv', { method: 'POST', body: JSON.stringify(patch) });
+          state.home = r.home;
+          renderTv();
+          toast(okMsg);
+        } catch (e) {
+          toast(e.message, true);
+        }
+      }
+
+      $('tvTemplate').onchange = () =>
+        saveTv({ template: $('tvTemplate').value }, '模板已保存，盒子下次开机生效');
+      $('tvProfile').onchange = () >
+        saveTv({ liveProfile: $('tvProfile').value }, '直播模式已保存，盒子下次切台生效');
+      $('toggleDiag').onclick = () => {
+        const on = !state?.home?.tv?.diagnostics;
+        saveTv({ diagnostics: on }, on ? '已打开 —— 记得走之前关掉' : '已关闭');
+      };
+
+      function renderScenes() {
+        const sc = state.home.scenes || {};
+        $('sceneLive').value = sc.live || '';
+        $('sceneVod').value = sc.vod || '';
+        $('sceneService').value = sc.service || '';
+        fillPicker('sceneLivePick', 'sceneLive');
+        fillPicker('sceneVodPick', 'sceneVod');
+        fillPicker('sceneServicePick', 'sceneService');
+      }
+
+      async function saveScenes(patch, okMsg) {
+        try {
+          const r = await api('/scenes', { method: 'POST', body: JSON.stringify(patch) });
+          state.home = r.home;
+          renderScenes();
+          toast(okMsg);
+        } catch (e) {
+          toast(e.message, true);
+        }
+      }
+
+      $('saveScenes').onclick = () =>
+        saveScenes(
+          {
+            live: $('sceneLive').value.trim(),
+            vod: $('sceneVod').value.trim(),
+            service: $('sceneService').value.trim(),
+          },
+          '页面背景已保存',
+        );
+
+      $('clearScenes').onclick = () =>
+        saveScenes({ live: '', vod: '', service: '' }, '已清空，跟随首页背景');
+
+      function render() {
+        renderBackground(state.home);
+        renderScenes();
+        renderTv();
+        renderLibrary();
+        renderBranding();
+        $('stat').textContent = `${state.stats.devices} 台设备 · ${state.media.length} 个素材`;
+        $('limit').textContent = '单个文件最大 ' + human(state.maxUploadBytes);
+        $('welcomeText').value = state.home.welcomeText || '';
+        $('propertyName').value = state.home.propertyName || '';
+        $('supportContact').value = state.home.supportContact || '';
+        renderAdult();
+      }
+
+      /* The restricted section.
+
+         Deliberately blunt about which of the three gates is shut, because
+         "it does not show up in room 402" has three different causes and an
+         operator should not have to guess which one they are looking at. */
+      /*
+       * The ticked categories.
+       *
+       * Held here rather than written on every click: an operator ticking
+       * twenty-nine boxes should be one save, not twenty-nine round trips that
+       * each rebuild the panel's category lists.
+       */
+      let cats = null;
+      let picked = new Set();
+
+      function catRow(c) {
+        const box = document.createElement('label');
+        box.className = 'card';
+        box.style.cssText = 'display:flex;gap:10px;align-items:center;padding:9px;cursor:pointer';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = picked.has(c.key);
+        cb.onchange = () => {
+          if (cb.checked) picked.add(c.key);
+          else picked.delete(c.key);
+          renderPickedCount();
+        };
+        const name = document.createElement('span');
+        name.style.flex = '1';
+        name.textContent = c.name;
+        const n = document.createElement('span');
+        n.className = 'hint';
+        n.style.margin = '0';
+        n.textContent = c.count + (c.keyword ? ' · 关键词命中' : '');
+        box.append(cb, name, n);
+        return box;
+      }
+
+      function renderPickedCount() {
+        $('adultPickedCount').textContent = '已勾 ' + picked.size + ' 个分类。';
+      }
+
+      function renderCats() {
+        const wrap = $('adultCatList');
+        if (!cats) { wrap.replaceChildren(); return; }
+        const groups = [
+          ['直播分类', cats.live],
+          ['电影分类', cats.vod],
+          ['剧集分类', cats.series],
+        ];
+        wrap.replaceChildren(
+          ...groups.flatMap(([title, list]) => {
+            const head = document.createElement('label');
+            head.style.marginTop = '14px';
+            head.textContent = title + '（' + (list || []).length + '）';
+            const grid = document.createElement('div');
+            grid.className = 'grid';
+            grid.append(...(list || []).map(catRow));
+            return [head, grid];
+          }),
+        );
+        for (const id of ['pickKeyword', 'clearPicked', 'savePicked']) $(id).hidden = false;
+        renderPickedCount();
+      }
+
+      $('loadCats').onclick = async () => {
+        $('loadCats').disabled = true;
+        try {
+          cats = await api('/categories');
+          picked = new Set(cats.picked || []);
+          renderCats();
+          toast('读到 ' + (cats.live.length + cats.vod.length + cats.series.length) + ' 个分类');
+        } catch (e) {
+          toast(e.message, true);
+        } finally {
+          $('loadCats').disabled = false;
+        }
+      };
+
+      $('pickKeyword').onclick = () => {
+        if (!cats) return;
+        for (const list of [cats.live, cats.vod, cats.series]) {
+          for (const c of list || []) if (c.keyword) picked.add(c.key);
+        }
+        renderCats();
+      };
+
+      $('clearPicked').onclick = () => {
+        picked = new Set();
+        renderCats();
+      };
+
+      $('savePicked').onclick = () => saveAdult({ categoryIds: [...picked] }, '受限分类已保存');
+
+      async function setAllRooms(allowed) {
+        const ids = ((state.adult || {}).rooms || []).map((r) => r.deviceId);
+        if (!ids.length) return toast('还没有设备上线', true);
+        if (allowed && !confirm('把全部 ' + ids.length + ' 台设备都授权？')) return;
+        try {
+          const r = await api('/adult/devices', {
+            method: 'POST',
+            body: JSON.stringify({ deviceIds: ids, allowed }),
+          });
+          state.adult = r.adult;
+          renderAdult();
+          toast(allowed ? '全部已授权' : '全部已取消');
+        } catch (e) {
+          toast(e.message, true);
+        }
+      }
+      $('allowAllRooms').onclick = () => setAllRooms(true);
+      $('denyAllRooms').onclick = () => setAllRooms(false);
+
+      function renderAdult() {
+        const a = state.adult || { enabled: false, pinSet: false, categories: [], rooms: [] };
+
+        $('adultPinState').textContent = a.pinSet ? 'PIN 已设置' : '还没设 PIN';
+        $('adultCats').value = (a.categories || []).join('\n');
+        $('toggleAdult').textContent = a.enabled ? '关闭板块' : '开启板块';
+
+        if (a.picked) {
+          picked = new Set(a.picked);
+          if (cats) renderCats();
+          else renderPickedCount();
+        }
+
+        const allowed = (a.rooms || []).filter((r) => r.allowed).length;
+        $('adultState').textContent = a.enabled
+          ? '已开启 · ' + allowed + ' 个房间已授权'
+          : a.pinSet
+            ? '已关闭（PIN 已设置,可以开启）'
+            : '已关闭 —— 要先设 PIN 才能开启';
+
+        $('adultRooms').replaceChildren(
+          ...(a.rooms || []).map((r) => {
+            const box = document.createElement('label');
+            box.className = 'card';
+            box.style.cssText = 'display:flex;gap:10px;align-items:center;padding:10px;cursor:pointer';
+            const cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.checked = r.allowed;
+            cb.onchange = () => setRoomAllowed(r.deviceId, cb.checked, cb);
+            const name = document.createElement('span');
+            name.textContent = (r.roomId ? '房间 ' + r.roomId : '未分房') +
+              (r.label ? ' · ' + r.label : '') + ' · ' + r.deviceId.slice(0, 12);
+            box.append(cb, name);
+            return box;
+          }),
+        );
+        if (!(a.rooms || []).length) {
+          $('adultRooms').textContent = '还没有设备上线。';
+        }
+      }
+
+      async function setRoomAllowed(deviceId, allowed, cb) {
+        try {
+          const r = await api('/adult/device', {
+            method: 'POST',
+            body: JSON.stringify({ deviceId, allowed }),
+          });
+          state.adult = r.adult;
+          renderAdult();
+          toast(allowed ? '已授权' : '已取消授权');
+        } catch (e) {
+          cb.checked = !allowed;
+          toast(e.message, true);
+        }
+      }
+
+      async function saveAdult(patch, okMsg) {
+        try {
+          const r = await api('/adult', { method: 'POST', body: JSON.stringify(patch) });
+          state.adult = r.adult;
+          renderAdult();
+          toast(okMsg);
+        } catch (e) {
+          toast(e.message, true);
+        }
+      }
+
+      // ------------------------------------------------------------ actions
+
+      async function refresh() {
+        state = await api('/state');
+        render();
+        // The building loads on its own clock: the page is usable before it
+        // arrives, and a slow roster must not hold up the settings above it.
+        void loadRooms();
+        void loadService();
+        void loadPay();
+        if (scope === 'platform') void loadProps();
+      }
+
+      async function setBackground(type, url) {
+        try {
+          const r = await api('/home/background', {
+            method: 'POST',
+            body: JSON.stringify({ type, url }),
+          });
+          state.home = r.home;
+          render();
+          toast('背景已切换');
+        } catch (e) {
+          toast(e.message, true);
+        }
+      }
+
+      async function removeMedia(m) {
+        if (!confirm('删除「' + (m.original || m.url) + '」？文件会从服务器上删掉。')) return;
+        try {
+          await api('/media/' + m.id, { method: 'DELETE' });
+          await refresh();
+          toast('已删除');
+        } catch (e) {
+          toast(e.message, true);
+        }
+      }
+
+      /* Measure a file before anyone puts it on a television.
+
+         Every one of these is something that looks fine on the laptop it was
+         made on and wrong in the room: a picture smaller than the panel, a
+         loop long enough to fill the disk, an audio track that will never be
+         heard but is still downloaded on every boot. This is the last moment
+         the operator can do anything about any of it. */
+      function probe(file) {
+        const url = URL.createObjectURL(file);
+        const done = (v) => {
+          URL.revokeObjectURL(url);
+          return v;
+        };
+
+        if (file.type.startsWith('image/')) {
+          return new Promise((resolve) => {
+            const img = new Image();
+            img.onload = () => resolve(done({ kind: 'image', w: img.naturalWidth, h: img.naturalHeight }));
+            img.onerror = () => resolve(done(null));
+            img.src = url;
+          });
+        }
+        if (!file.type.startsWith('video/')) return Promise.resolve(null);
+
+        return new Promise((resolve) => {
+          const v = document.createElement('video');
+          v.muted = true;
+          v.preload = 'auto';
+          const give = () =>
+            resolve(
+              done({
+                kind: 'video',
+                w: v.videoWidth,
+                h: v.videoHeight,
+                duration: v.duration,
+                /* No portable way to ask. mozHasAudio and audioTracks answer
+                   outright where they exist; elsewhere the decoded-bytes
+                   counter only moves once decoding has begun, which is why
+                   this plays a moment first. Undetectable stays undetectable -
+                   the check below only fires on a positive. */
+                hasAudio:
+                  v.mozHasAudio ||
+                  (v.audioTracks && v.audioTracks.length > 0) ||
+                  v.webkitAudioDecodedByteCount > 0,
+              }),
+            );
+          v.onloadeddata = () => {
+            v.play().catch(() => {});
+            setTimeout(() => {
+              v.pause();
+              give();
+            }, 400);
+          };
+          v.onerror = () => resolve(done(null));
+          v.src = url;
+        });
+      }
+
+      /* Turn a probe plus what the server noticed into plain sentences.
+         `faststart` comes from the server because it means reading the file's
+         atom table, which the browser will not show us. */
+      function checksFor(file, info, m) {
+        const out = [];
+        const MB = (n) => (n / 1024 / 1024).toFixed(1) + ' MB';
+
+        if (m && m.w && m.w < 1920) {
+          out.push([
+            'bad',
+            `分辨率只有 ${m.w}×${m.h}，电视至少 1920×1080。放上去会被拉伸，看着发虚。`,
+          ]);
+        } else if (m && m.w) {
+          out.push(['ok', `分辨率 ${m.w}×${m.h}，够用。`]);
+        }
+
+        if (info.kind !== 'video') return out;
+
+        if (info.faststart === false) {
+          out.push([
+            'bad',
+            '索引（moov）在文件末尾 —— 电视必须把整个文件下完才能出第一帧。' +
+              '用 ffmpeg -movflags +faststart 重导一次，或在 Handbrake 里勾 Web Optimized。',
+          ]);
+        } else if (info.faststart === true) {
+          out.push(['ok', '索引在文件开头，边下边播，不用等下完。']);
+        }
+
+        if (m && isFinite(m.duration)) {
+          if (m.duration > 45) {
+            out.push(['warn', `时长 ${Math.round(m.duration)} 秒。背景是循环播的，15～30 秒就够，长了只是白占体积。`]);
+          } else {
+            out.push(['ok', `时长 ${Math.round(m.duration)} 秒。`]);
+          }
+        }
+
+        if (m && m.hasAudio) {
+          out.push(['warn', '带音轨。背景永远是静音播的，这段声音只会被下载、不会被听见 —— 导出时去掉能省不少体积。']);
+        }
+
+        if (info.bytes > 10 * 1024 * 1024) {
+          out.push([
+            info.bytes > 40 * 1024 * 1024 ? 'bad' : 'warn',
+            `${MB(info.bytes)}。每台盒子首次开机都要下这么多（之后有 30 天缓存），建议压到 10MB 以内。`,
+          ]);
+        } else {
+          out.push(['ok', `${MB(info.bytes)}，体积合适。`]);
+        }
+
+        return out;
+      }
+
+      function renderChecks(rows) {
+        const box = $('checks');
+        box.innerHTML = '';
+        box.hidden = !rows.length;
+        for (const [level, text] of rows) {
+          const li = document.createElement('li');
+          li.className = level;
+          li.textContent = text;
+          box.append(li);
+        }
+      }
+
+      /* XHR rather than fetch: a 40MB loop over a hotel uplink needs a
+         progress bar, and fetch cannot report upload progress. */
+      function upload(file) {
+        const fd = new FormData();
+        fd.append('file', file);
+        const bar = $('bar');
+        bar.hidden = false;
+        bar.firstElementChild.style.width = '0%';
+
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/api/admin/upload');
+        xhr.setRequestHeader('Authorization', 'Bearer ' + token);
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            bar.firstElementChild.style.width = (e.loaded / e.total) * 100 + '%';
+          }
+        };
+        xhr.onload = async () => {
+          bar.hidden = true;
+          let data = {};
+          try { data = JSON.parse(xhr.responseText); } catch {}
+          if (xhr.status >= 200 && xhr.status < 300) {
+            await refresh();
+            const rows = checksFor(file, data.file || {}, await probe(file));
+            renderChecks(rows);
+            const bad = rows.filter((r) => r[0] !== 'ok').length;
+            toast(
+              bad ? `上传完成，但有 ${bad} 项要注意，见下方检查结果` : '上传完成，点「设为背景」启用',
+              bad > 0,
+            );
+          } else {
+            toast(data.error || '上传失败 ' + xhr.status, true);
+          }
+        };
+        xhr.onerror = () => {
+          bar.hidden = true;
+          toast('上传失败，检查网络', true);
+        };
+        xhr.send(fd);
+      }
+
+      // -------------------------------------------------------------- wiring
+
+      $('file').onchange = (e) => {
+        if (e.target.files[0]) upload(e.target.files[0]);
+        e.target.value = '';
+      };
+      $('drop').onclick = () => $('file').click();
+      $('drop').ondragover = (e) => {
+        e.preventDefault();
+        $('drop').classList.add('over');
+      };
+      $('drop').ondragleave = () => $('drop').classList.remove('over');
+      $('drop').ondrop = (e) => {
+        e.preventDefault();
+        $('drop').classList.remove('over');
+        if (e.dataTransfer.files[0]) upload(e.dataTransfer.files[0]);
+      };
+
+      $('useNone').onclick = () => setBackground('none', null);
+      $('extImg').onclick = () => setBackground('image', $('extUrl').value.trim());
+      $('extVid').onclick = () => setBackground('video', $('extUrl').value.trim());
+
+      $('saveText').onclick = async () => {
+        try {
+          const r = await api('/home/text', {
+            method: 'POST',
+            body: JSON.stringify({
+              welcomeText: $('welcomeText').value,
+              propertyName: $('propertyName').value,
+              supportContact: $('supportContact').value,
+            }),
+          });
+          state.home = r.home;
+          toast('已保存');
+        } catch (e) {
+          toast(e.message, true);
+        }
+      };
+
+      $('accentPicker').oninput = (e) => ($('accent').value = e.target.value);
+      $('accent').oninput = (e) => {
+        if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(e.target.value)) {
+          $('accentPicker').value = e.target.value;
+        }
+      };
+
+      async function saveBranding(patch, okMsg) {
+        try {
+          const r = await api('/branding', { method: 'POST', body: JSON.stringify(patch) });
+          state.home = r.home;
+          renderBranding();
+          toast(okMsg);
+        } catch (e) {
+          toast(e.message, true);
+        }
+      }
+
+      $('saveBrand').onclick = () =>
+        saveBranding(
+          {
+            splashUrl: $('splashUrl').value.trim(),
+            loadingUrl: $('loadingUrl').value.trim(),
+            logoUrl: $('logoUrl').value.trim(),
+            accent: $('accent').value.trim(),
+          },
+          '已保存，电视端下次开机生效',
+        );
+
+      $('saveCss').onclick = () => saveBranding({ customCss: $('customCss').value }, '样式已保存');
+      $('clearCss').onclick = () => {
+        if (!confirm('清空自定义 CSS？电视端会回到默认样式。')) return;
+        $('customCss').value = '';
+        saveBranding({ customCss: '' }, '已清空');
+      };
+      $('customCss').oninput = () => {
+        $('cssLen').textContent = $('customCss').value.length + ' / 20000 字符';
+      };
+
+      $('saveAdultPin').onclick = () => {
+        const pin = $('adultPin').value.trim();
+        if (!pin) return toast('填一个 4-8 位的 PIN', true);
+        saveAdult({ pin }, 'PIN 已保存');
+        $('adultPin').value = '';
+      };
+
+      $('saveAdultCats').onclick = () => {
+        const categories = $('adultCats')
+          .value.split('\n')
+          .map((s) => s.trim())
+          .filter(Boolean);
+        saveAdult({ categories }, '关键词已保存');
+      };
+
+      $('toggleAdult').onclick = () => {
+        const on = !(state.adult && state.adult.enabled);
+        if (on && !(state.adult && state.adult.pinSet)) {
+          return toast('先设置 PIN,再打开成人板块', true);
+        }
+        if (on && !confirm('确定开启成人板块？开启后,已授权的房间输入 PIN 就能看到。')) return;
+        saveAdult({ enabled: on }, on ? '板块已开启' : '板块已关闭');
+      };
+
+      // ----------------------------------------------------------- 酒店
+
+      /**
+       * 按身份把界面铺开。
+       *
+       * 平台管理员：顶栏出现酒店下拉，多一个「酒店」板块，能建店删店划盒子。
+       * 酒店管理员：只看到自己那一家，连下拉都不出现 —— 没有别家可选。
+       *
+       * 这只是**界面**上的区分。真正挡住 A 店看 B 店的是服务端每条查询里的
+       * WHERE property_id，不是这里藏没藏几个按钮。
+       */
+      function applyScope() {
+        const isPlatform = scope === 'platform';
+        $('manageProps').hidden = !isPlatform;
+        $('propsSection').hidden = !isPlatform;
+        $('propPick').hidden = !isPlatform || propList.length < 2;
+
+        if (isPlatform) {
+          $('propPick').replaceChildren(
+            ...propList.map((p) =>
+              el('option', { value: String(p.id), textContent: p.name, selected: p.id === currentProp }),
+            ),
+          );
+          renderProps();
+        }
+
+        const here = propList.find((p) => p.id === currentProp);
+        $('pageTitle').textContent = here ? here.name : isPlatform ? 'KDTV 后台' : '后台';
+        $('stat').textContent = isPlatform ? `共 ${propList.length} 家酒店` : '';
+      }
+
+      $('propPick').onchange = async () => {
+        currentProp = Number($('propPick').value);
+        applyScope();
+        await refresh();
+      };
+
+      $('manageProps').onclick = () => {
+        $('propsSection').hidden = false;
+        $('propsSection').scrollIntoView({ behavior: 'smooth' });
+      };
+
+      function renderProps() {
+        $('propRows').replaceChildren(
+          ...propList.map((p) => {
+            const acts = el('div', { className: 'acts' });
+
+            acts.append(
+              el('button', {
+                textContent: '管这家',
+                onclick: async () => {
+                  currentProp = p.id;
+                  $('propPick').value = String(p.id);
+                  applyScope();
+                  await refresh();
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                },
+              }),
+            );
+
+            acts.append(
+              el('button', {
+                textContent: p.hasLogin ? '改登录口令' : '设登录口令',
+                onclick: async () => {
+                  const t = prompt(
+                    `给「${p.name}」设一个后台口令（至少 8 位）。\n\n` +
+                      '前台拿这个口令登录，只看得到自己这一家。\n' +
+                      '手机上开 /desk/ 用同一个口令，就是前台手机页（开房、退房、接单）。' +
+                      '留空并确定 = 取消它的后台登录。',
+                    '',
+                  );
+                  if (t === null) return;
+                  try {
+                    await api('/properties/' + p.id + '/token', {
+                      method: 'POST',
+                      body: JSON.stringify({ token: t }),
+                    });
+                    toast(t ? '口令已设置' : '已取消这家的后台登录');
+                    await loadProps();
+                  } catch (e) {
+                    toast(e.message, true);
+                  }
+                },
+              }),
+            );
+
+            acts.append(
+              el('button', {
+                textContent: '换线路',
+                onclick: async () => {
+                  const u = prompt(`「${p.name}」用哪条 XUI 线路？\n留空 = 跟平台默认线路。`, p.line || '');
+                  if (u === null) return;
+                  const pw = u ? prompt('线路密码', '') : '';
+                  if (u && pw === null) return;
+                  try {
+                    await api('/properties/' + p.id, {
+                      method: 'POST',
+                      body: JSON.stringify({ lineUser: u, linePass: pw }),
+                    });
+                    toast(u ? '线路已更换，盒子重启后生效' : '已改回平台默认线路');
+                    await loadProps();
+                  } catch (e) {
+                    toast(e.message, true);
+                  }
+                },
+              }),
+            );
+
+            acts.append(
+              el('button', {
+                className: 'danger',
+                textContent: '删除',
+                onclick: async () => {
+                  if (
+                    !confirm(
+                      `删掉「${p.name}」？\n\n` +
+                        '它的房间、菜单、订单、通知、配置全部一起删掉，不可恢复。\n' +
+                        '盒子不删 —— 那是真实的硬件，会解绑并重新显示配对码，可以分给别家。',
+                    )
+                  )
+                    return;
+                  try {
+                    await api('/properties/' + p.id, { method: 'DELETE' });
+                    toast('已删除');
+                    await loadProps();
+                  } catch (e) {
+                    toast(e.message, true);
+                  }
+                },
+              }),
+            );
+
+            return el(
+              'tr',
+              null,
+              el('td', null, p.name),
+              el('td', null, el('span', { className: 'mono', textContent: p.slug })),
+              el(
+                'td',
+                null,
+                el('span', {
+                  className: p.usesDefaultLine ? 'hint' : '',
+                  textContent: p.usesDefaultLine ? '默认线路' : p.line,
+                }),
+              ),
+              el('td', null, `${p.recentBoxes ?? 0} / ${p.boxes ?? 0}`),
+              el('td', null, String(p.occupiedRooms ?? 0)),
+              el(
+                'td',
+                null,
+                p.pendingOrders
+                  ? el('span', { className: 'pill wait', textContent: p.pendingOrders + ' 单' })
+                  : '',
+              ),
+              el(
+                'td',
+                null,
+                el('span', {
+                  className: 'pill ' + (p.hasLogin ? 'live' : ''),
+                  textContent: p.hasLogin ? '已设置' : '未设置',
+                }),
+              ),
+              el('td', null, acts),
+            );
+          }),
+        );
+      }
+
+      async function loadProps() {
+        try {
+          const r = await api('/properties');
+          scope = r.scope;
+          propList = r.properties ?? [];
+          if (!propList.some((p) => p.id === currentProp)) currentProp = propList[0]?.id ?? null;
+          renderDefaultProp(r.defaultProperty ?? null);
+          applyScope();
+        } catch (e) {
+          toast(e.message, true);
+        }
+      }
+
+      $('addProp').onclick = async () => {
+        const name = $('newPropName').value.trim();
+        const slug = $('newPropSlug').value.trim().toLowerCase();
+        if (!name || !slug) return toast('名字和标识都要填', true);
+        try {
+          const r = await api('/properties', {
+            method: 'POST',
+            body: JSON.stringify({ name, slug }),
+          });
+          $('newPropName').value = '';
+          $('newPropSlug').value = '';
+          propList = r.properties;
+          currentProp = r.property.id;
+          applyScope();
+          await refresh();
+          toast(`已建「${r.property.name}」—— 记得给它设登录口令和背景`);
+        } catch (e) {
+          toast(e.message, true);
+        }
+      };
+
+      function renderDefaultProp(current) {
+        $('defaultProp').replaceChildren(
+          el('option', { value: '', textContent: '不自动分配（显示配对码）' }),
+          ...propList.map((p) =>
+            el('option', { value: String(p.id), textContent: p.name, selected: p.id === current }),
+          ),
+        );
+        $('defaultPropState').textContent = current
+          ? '新盒子会自动进这家 —— 铺完记得改回「不自动分配」'
+          : '新盒子会停在配对码那一页，等人分配';
+      }
+
+      $('saveDefaultProp').onclick = async () => {
+        const v = $('defaultProp').value;
+        try {
+          const r = await api('/properties/default', {
+            method: 'POST',
+            body: JSON.stringify({ propertyId: v ? Number(v) : null }),
+          });
+          renderDefaultProp(r.defaultProperty);
+          toast('已保存');
+        } catch (e) {
+          toast(e.message, true);
+        }
+      };
+
+      // -------------------------------------------------- rooms and devices
+
+      /* The building.
+
+         Fetched separately from /state because it is the one thing on this
+         page that changes without anyone touching it - a box boots, a guest
+         checks in - and an operator pressing 刷新 should not have to re-fetch
+         the whole media library to see it. */
+      let roster = null;
+
+      function el(tag, props, ...kids) {
+        const node = Object.assign(document.createElement(tag), props || {});
+        for (const k of kids) if (k != null) node.append(k);
+        return node;
+      }
+
+      /* last_seen is the last time the box *booted*, not a heartbeat: the
+         launcher says hello once at startup and then never again. So this
+         column says 最后开机 and not 在线 - a television that has been on all
+         week honestly reports the day someone switched it on. */
+      function ago(seconds) {
+        if (!seconds) return '从没上线';
+        const m = Math.floor((Date.now() / 1000 - seconds) / 60);
+        if (m < 1) return '刚刚';
+        if (m < 60) return m + ' 分钟前';
+        if (m < 1440) return Math.floor(m / 60) + ' 小时前';
+        return Math.floor(m / 1440) + ' 天前';
+      }
+
+      function deviceRow(d) {
+        const room = el('input', { type: 'text', value: d.roomId || '', placeholder: '如 301' });
+        const label = el('input', { type: 'text', value: d.label || '', placeholder: '大床房 / 三楼东' });
+        const guest = el('input', {
+          type: 'text',
+          value: d.guestName || '',
+          placeholder: d.roomId ? '客人姓名' : '先填房间号',
+        });
+
+        const lineCell = el('td', { className: 'line' });
+        const lineText = el('span', {
+          className: d.bound ? '' : 'mono',
+          textContent: d.line || '未绑定',
+        });
+        const lineEdit = el('button', { textContent: '换', style: 'padding:2px 8px;font-size:12px' });
+        lineCell.append(lineText, ' ', lineEdit);
+
+        /* Changing a line is rare and consequential - it swaps the whole
+           channel list for that room - so it is two deliberate fields that
+           appear on request, not a box sitting there inviting a typo. */
+        lineEdit.onclick = () => {
+          const user = el('input', { type: 'text', value: d.line || '', placeholder: '线路账号', style: 'width:110px' });
+          const pass = el('input', { type: 'text', value: '', placeholder: '线路密码', style: 'width:110px' });
+          const ok = el('button', { className: 'primary', textContent: '确定', style: 'padding:2px 8px;font-size:12px' });
+          const cancel = el('button', { textContent: '取消', style: 'padding:2px 8px;font-size:12px' });
+          ok.onclick = async () => {
+            try {
+              await apiRoster('/devices/' + encodeURIComponent(d.deviceId), {
+                method: 'POST',
+                body: JSON.stringify({ lineUser: user.value.trim(), linePass: pass.value.trim() }),
+              });
+              toast(user.value.trim() ? '线路已更换，盒子重启后生效' : '已解绑，盒子重启后显示配对码');
+            } catch (e) {
+              toast(e.message, true);
+            }
+            renderRooms();
+          };
+          cancel.onclick = renderRooms;
+          lineCell.replaceChildren(user, ' ', pass, ' ', ok, ' ', cancel);
+          user.focus();
+        };
+
+        const status = d.bound
+          ? el('span', { className: 'pill live', textContent: '已激活' })
+          : el('span', { className: 'pill wait', textContent: '待配对 ' + (d.code || '') });
+
+        const save = el('button', { className: 'primary', textContent: '保存' });
+        save.onclick = async () => {
+          save.disabled = true;
+          try {
+            const roomId = room.value.trim();
+            await apiRoster('/devices/' + encodeURIComponent(d.deviceId), {
+              method: 'POST',
+              body: JSON.stringify({ roomId, label: label.value.trim() }),
+            });
+            const name = guest.value.trim();
+            if (roomId && name !== (d.guestName || '')) {
+              await apiRoster(
+                '/rooms/' + encodeURIComponent(roomId) + (name ? '/checkin' : '/checkout'),
+                { method: 'POST', body: JSON.stringify({ guestName: name }) },
+              );
+            }
+            toast('已保存');
+          } catch (e) {
+            toast(e.message, true);
+          } finally {
+            save.disabled = false;
+            renderRooms();
+          }
+        };
+
+        const acts = el('div', { className: 'acts' }, save);
+
+        if (d.checkedIn || d.guestName) {
+          const out = el('button', { textContent: '退房' });
+          out.onclick = async () => {
+            if (!confirm('房间 ' + d.roomId + ' 退房？会清掉客人姓名，并收回这个房间的成人授权。')) return;
+            try {
+              await apiRoster('/rooms/' + encodeURIComponent(d.roomId) + '/checkout', { method: 'POST' });
+              toast('已退房，成人授权已收回');
+            } catch (e) {
+              toast(e.message, true);
+            }
+            renderRooms();
+          };
+          acts.append(out);
+        }
+
+        const drop = el('button', { className: 'danger', textContent: '移除' });
+        drop.onclick = async () => {
+          const warn =
+            '从列表里移除这台盒子？只对已经拆掉、换掉的电视有意义 —— ' +
+            '还挂在墙上的盒子下次开机会重新出现，变成一台没分房、要重新配对的新设备。';
+          if (!confirm(warn)) return;
+          try {
+            await apiRoster('/devices/' + encodeURIComponent(d.deviceId), { method: 'DELETE' });
+            toast('已移除');
+          } catch (e) {
+            toast(e.message, true);
+          }
+          renderRooms();
+        };
+        acts.append(drop);
+
+        return el(
+          'tr',
+          null,
+          el('td', null, room),
+          el('td', null, label),
+          el('td', null, guest),
+          lineCell,
+          el('td', null, status, el('div', { className: 'mono', textContent: d.deviceId.slice(0, 16) })),
+          el('td', null, el('span', { className: 'mono', textContent: ago(d.lastSeen) })),
+          el('td', null, acts),
+        );
+      }
+
+      /* Every write here answers with the whole building, so the table is
+         rebuilt from the server's view rather than from what the browser
+         hoped would happen. */
+      async function apiRoster(path, opts) {
+        const r = await api(path, opts);
+        if (r.devices) roster = { devices: r.devices, rooms: r.rooms };
+        return r;
+      }
+
+      function renderRooms() {
+        const body = $('roomRows');
+        if (!roster) {
+          body.replaceChildren();
+          $('roomEmpty').textContent = '正在读取…';
+          return;
+        }
+
+        const q = $('roomSearch').value.trim().toLowerCase();
+        const mode = $('roomFilter').value;
+        const rows = roster.devices.filter((d) => {
+          if (mode === 'unassigned' && d.roomId) return false;
+          if (mode === 'unbound' && d.bound) return false;
+          if (mode === 'checkedin' && !d.checkedIn) return false;
+          if (!q) return true;
+          return [d.roomId, d.label, d.deviceId, d.guestName, d.mac].some((v) =>
+            String(v || '').toLowerCase().includes(q),
+          );
+        });
+
+        $('roomStat').textContent =
+          roster.devices.length +
+          ' 台盒子 · ' +
+          roster.devices.filter((d) => d.roomId).length +
+          ' 台已分房 · ' +
+          roster.rooms.filter((r) => r.checkedIn).length +
+          ' 间已入住';
+
+        body.replaceChildren(...rows.map(deviceRow));
+        renderEmptyRooms();
+        $('roomEmpty').textContent = rows.length
+          ? ''
+          : roster.devices.length
+            ? '没有符合条件的。'
+            : '还没有盒子上线。盒子开机后会自己出现在这里，带一个 6 位配对码。';
+      }
+
+      /* Rooms with nothing in them have no row in the table above - there is
+         no box to draw one for - so they would otherwise be invisible and
+         un-deletable. A typo'd room number has to be removable by whoever
+         made it. */
+      function renderEmptyRooms() {
+        const empty = (roster.rooms || []).filter((r) => !r.boxes);
+        $('emptyRooms').hidden = empty.length === 0;
+        $('emptyRoomList').replaceChildren(
+          ...empty.map((r) => {
+            const btn = el('button', {
+              textContent: r.roomId + (r.guestName ? ' · ' + r.guestName : '') + '  ×',
+              title: '删除房间 ' + r.roomId,
+            });
+            btn.onclick = async () => {
+              if (!confirm('删除房间 ' + r.roomId + '？')) return;
+              try {
+                await apiRoster('/rooms/' + encodeURIComponent(r.roomId), { method: 'DELETE' });
+                toast('已删除');
+              } catch (e) {
+                toast(e.message, true);
+              }
+              renderRooms();
+            };
+            return btn;
+          }),
+        );
+      }
+
+      async function loadRooms() {
+        try {
+          const r = await api('/rooms');
+          roster = { devices: r.devices, rooms: r.rooms };
+        } catch (e) {
+          toast(e.message, true);
+        }
+        renderRooms();
+      }
+
+      $('reloadRooms').onclick = loadRooms;
+      $('roomSearch').oninput = renderRooms;
+      $('roomFilter').onchange = renderRooms;
+
+      // ------------------------------------------------ 客房服务 / 收款
+
+      let svc = null;
+      let payData = null;
+
+      function when(ts) {
+        if (!ts) return '';
+        const d = new Date(ts * 1000);
+        const p = (n) => String(n).padStart(2, '0');
+        return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+      }
+
+      const ORDER_STATUS = {
+        new: '新单',
+        paid: '已付款',
+        doing: '处理中',
+        done: '已完成',
+        cancelled: '已取消',
+      };
+
+      const PAY_STATE = { pending: '待付款', paid: '已付款', expired: '已过期', failed: '失败' };
+
+      /* 订单。
+         前台真正要的只有两个动作：把单子推到下一步，或者取消。
+         所以每行只有这两个按钮，不做一个五选一的下拉。 */
+      function renderOrders() {
+        const rows = (svc?.orders ?? []).map((o) => {
+          const items = (o.items ?? [])
+            .map((i) => `${i.name} ×${i.qty}`)
+            .join('，');
+
+          const payCell = o.payment
+            ? el('span', {
+                className: 'pill ' + (o.payment.state === 'paid' ? 'live' : 'wait'),
+                textContent: (PAY_STATE[o.payment.state] || o.payment.state) + ' ' + o.payment.amountText,
+              })
+            : el('span', { className: 'hint', textContent: '未走线上' });
+
+          const acts = el('div', { className: 'acts' });
+          if (o.status !== 'done' && o.status !== 'cancelled') {
+            const next = o.status === 'doing' ? 'done' : 'doing';
+            acts.append(
+              el('button', {
+                className: 'primary',
+                textContent: next === 'done' ? '完成' : '开始处理',
+                onclick: () => setOrder(o.id, next),
+              }),
+            );
+            acts.append(
+              el('button', { className: 'danger', textContent: '取消', onclick: () => setOrder(o.id, 'cancelled') }),
+            );
+          }
+
+          return el(
+            'tr',
+            null,
+            el('td', null, el('span', { className: 'mono', textContent: when(o.createdAt) })),
+            el('td', null, (o.roomId || '未分房') + (o.guestName ? ' · ' + o.guestName : '')),
+            el('td', null, items + (o.note ? '（' + o.note + '）' : '')),
+            el('td', null, String(o.total)),
+            el('td', null, payCell),
+            el('td', null, ORDER_STATUS[o.status] || o.status),
+            el('td', null, acts),
+          );
+        });
+
+        $('svcOrders').replaceChildren(...rows);
+        $('svcOrdersEmpty').textContent = rows.length ? '' : '还没有人点过东西。';
+        const pending = svc?.pending ?? 0;
+        $('svcPending').textContent = pending ? pending + ' 单待处理' : '';
+        $('svcPending').className = 'pill' + (pending ? ' wait' : '');
+      }
+
+      async function setOrder(id, status) {
+        try {
+          const r = await api('/service/order/' + id, {
+            method: 'POST',
+            body: JSON.stringify({ status }),
+          });
+          svc.orders = r.orders;
+          svc.pending = r.pending;
+          renderOrders();
+          toast('已更新');
+        } catch (e) {
+          toast(e.message, true);
+        }
+      }
+
+      /* 菜单。每行就地编辑，保存时整行提交。 */
+      function menuRow(item) {
+        const f = {};
+        const cell = (key, value, width, placeholder) => {
+          f[key] = el('input', { type: 'text', value: value ?? '', placeholder: placeholder || '' });
+          if (width) f[key].style.width = width;
+          return el('td', null, f[key]);
+        };
+
+        const avail = el('input', { type: 'checkbox', checked: item.available !== false });
+
+        const save = el('button', { className: 'primary', textContent: '保存' });
+        save.onclick = async () => {
+          save.disabled = true;
+          try {
+            const r = await api('/service/item', {
+              method: 'POST',
+              body: JSON.stringify({
+                id: item.id ?? undefined,
+                category: f.category.value.trim(),
+                name: {
+                  en: f.en.value.trim(),
+                  zh: f.zh.value.trim(),
+                  km: f.km.value.trim(),
+                },
+                price: Number(f.price.value) || 0,
+                sortOrder: Number(f.sort.value) || 0,
+                available: avail.checked,
+              }),
+            });
+            svc.menu = r.menu;
+            renderMenu();
+            toast('已保存');
+          } catch (e) {
+            toast(e.message, true);
+          } finally {
+            save.disabled = false;
+          }
+        };
+
+        const acts = el('div', { className: 'acts' }, save);
+        if (item.id) {
+          const drop = el('button', { className: 'danger', textContent: '删除' });
+          drop.onclick = async () => {
+            if (!confirm('删掉「' + (item.name?.en || '') + '」？已经下过的单不受影响 —— 订单里记的是当时的名字和价格。')) return;
+            try {
+              const r = await api('/service/item/' + item.id, { method: 'DELETE' });
+              svc.menu = r.menu;
+              renderMenu();
+              toast('已删除');
+            } catch (e) {
+              toast(e.message, true);
+            }
+          };
+          acts.append(drop);
+        }
+
+        return el(
+          'tr',
+          null,
+          cell('category', item.category, '110px', '分类'),
+          cell('en', item.name?.en, '150px', '必填'),
+          cell('zh', item.name?.zh, '120px'),
+          cell('km', item.name?.km, '120px'),
+          cell('price', item.price, '80px', '0'),
+          cell('sort', item.sortOrder, '60px', '0'),
+          el('td', null, avail),
+          el('td', null, acts),
+        );
+      }
+
+      let draftItem = null;
+
+      function renderMenu() {
+        const rows = (svc?.menu ?? []).map(menuRow);
+        if (draftItem) rows.unshift(menuRow(draftItem));
+        $('svcMenu').replaceChildren(...rows);
+        /* 币种对不上是会真收错钱的（种子菜单 35000 IDR + 收款配成 USD
+           = 一盘炒饭 35000 美元），所以这条警告放在菜单正上方，
+           而且说清楚现在的后果：这单不会走线上收款。 */
+        const money = svc?.money;
+        const warn = $('svcMoney');
+        warn.hidden = !money || money.ok;
+        if (money && !money.ok) {
+          warn.replaceChildren(
+            el('li', {
+              className: 'bad',
+              textContent: money.reason + '。在改好之前，客人下的单不会出收款码，会直接留给前台结算。',
+            }),
+          );
+        }
+
+        const curs = new Set((svc?.menu ?? []).map((i) => i.currency));
+        $('svcCurrency').value = curs.size === 1 ? [...curs][0] : (svc?.currency ?? '');
+        $('svcCurrency').placeholder = curs.size > 1 ? '现在有 ' + curs.size + ' 种，建议统一' : 'USD';
+      }
+
+      $('addSvcItem').onclick = () => {
+        draftItem = { id: null, category: '', name: {}, price: 0, sortOrder: 0, available: true };
+        renderMenu();
+        $('svcMenu').querySelector('input')?.focus();
+      };
+
+      $('saveSvcCurrency').onclick = async () => {
+        try {
+          const r = await api('/service/currency', {
+            method: 'POST',
+            body: JSON.stringify({ currency: $('svcCurrency').value.trim() }),
+          });
+          svc.menu = r.menu;
+          renderMenu();
+          toast('整份菜单已改成 ' + r.currency);
+        } catch (e) {
+          toast(e.message, true);
+        }
+      };
+
+      async function loadService() {
+        try {
+          svc = await api('/service');
+          draftItem = null;
+          renderOrders();
+          renderMenu();
+        } catch (e) {
+          toast(e.message, true);
+        }
+      }
+
+      // ------------------------------------------------------------ 收款
+
+      const SECTION_NAMES = { live: '电视直播', vod: '影视点播', adult: '成人板块' };
+
+      /*
+       * 收款有两套通道，界面上就是两套表单，靠这个开关切。
+       *
+       *   这家酒店  客人点餐的钱 —— 进酒店自己的商户，我们不经手
+       *   平台      观看权和服务费 —— 进我们的商户
+       *
+       * 酒店管理员看不到这个开关，它只有一套可填。
+       */
+      let payScope = 'hotel';
+
+      function renderPay() {
+        if (!payData) return;
+        const isPlatformScope = payScope === 'platform' && payData.platformChannel;
+        const c = isPlatformScope ? payData.platformChannel : payData.channel;
+        const b = payData.billing;
+
+        $('payScopeRow').hidden = !payData.platformChannel;
+        if (payData.platformChannel) {
+          $('payScopeHotel').className = isPlatformScope ? '' : 'primary';
+          $('payScopePlatform').className = isPlatformScope ? 'primary' : '';
+          $('payScopeHint').textContent = isPlatformScope
+            ? '平台商户 —— 客人买观看权、酒店交服务费的钱进这里。这一套十家共用，只有你能改。'
+            : '这家酒店的商户 —— 客人点餐的钱直接进酒店账上，我们不经手。每家各填各的。';
+        }
+
+        $('payGateway').value = c.gatewayUrl || '';
+        $('payMchNo').value = c.mchNo || '';
+        $('payAppId').value = c.appId || '';
+        $('payWayCode').value = c.wayCode || '';
+        $('payCurrency').value = c.currency || '';
+        // 密钥永远不回显。留空保存 = 不改。
+        $('paySecretState').textContent = c.secretSet
+          ? '应用密钥已保存（不回显；留空保存 = 不改，要换就填新的）'
+          : '还没填应用密钥';
+        $('togglePay').textContent = c.enabled ? '关闭收款' : '开启收款';
+        $('payState').textContent = c.ready
+          ? '收款已开启 · ' + c.currency
+          : c.enabled
+            ? '开关是开的，但通道没配全 —— 实际收不了款'
+            : '收款已关闭';
+
+        $('billMode').value = b.mode;
+        $('billProperty').hidden = b.mode !== 'property';
+        $('billGuest').hidden = b.mode !== 'guest';
+
+        $('billState').textContent =
+          b.mode === 'property'
+            ? b.propertyPaid
+              ? '服务费还有 ' + b.daysLeft + ' 天'
+              : '服务费已到期 —— 现在房间仍然免费，切到「客人付费」才会开始收'
+            : b.payReady
+              ? '客人付费中 · ' + b.passes + ' 台盒子有观看权'
+              : '选了客人付费，但收款通道没就绪 —— 所以什么都没锁';
+
+        $('billSections').replaceChildren(
+          ...Object.keys(SECTION_NAMES).map((k) => {
+            const box = el('label', { style: 'display:flex;gap:6px;align-items:center;margin:0;cursor:pointer' });
+            const cb = el('input', { type: 'checkbox', checked: b.gateSections.includes(k) });
+            cb.onchange = () => {
+              const list = [...$('billSections').querySelectorAll('input')]
+                .map((x, i) => (x.checked ? Object.keys(SECTION_NAMES)[i] : null))
+                .filter(Boolean);
+              saveBilling({ gateSections: list }, '已保存');
+            };
+            box.append(cb, el('span', { textContent: SECTION_NAMES[k] }));
+            return box;
+          }),
+        );
+
+        $('billGuestPlans').value = (b.guestPlans || []).map((p) => p.days + ' ' + p.price).join('\n');
+
+        $('payRows').replaceChildren(
+          ...(payData.recent || []).map((r) =>
+            el(
+              'tr',
+              null,
+              el('td', null, el('span', { className: 'mono', textContent: when(r.createdAt) })),
+              el('td', null, el('span', { className: 'mono', textContent: r.orderNo })),
+              el('td', null, { service: '客房服务', unlock: '观看权', property: '服务费' }[r.kind] || r.kind),
+              el('td', null, r.subject + (r.note ? '　⚠ ' + r.note : '')),
+              el('td', null, r.amountText),
+              el(
+                'td',
+                null,
+                el('span', {
+                  className: 'pill ' + (r.state === 'paid' ? 'live' : r.state === 'pending' ? 'wait' : ''),
+                  textContent: PAY_STATE[r.state] || r.state,
+                }),
+              ),
+            ),
+          ),
+        );
+      }
+
+      async function loadPay() {
+        try {
+          payData = await api('/pay');
+          renderPay();
+        } catch (e) {
+          toast(e.message, true);
+        }
+      }
+
+      async function savePay(patch, okMsg) {
+        try {
+          const r = await api('/pay/channel', { method: 'POST', body: JSON.stringify(patch) });
+          if (patch.platform) payData.platformChannel = r.channel;
+          else payData.channel = r.channel;
+          payData.billing = r.billing;
+          renderPay();
+          toast(okMsg);
+        } catch (e) {
+          toast(e.message, true);
+        }
+      }
+
+      async function saveBilling(patch, okMsg) {
+        try {
+          const r = await api('/billing', { method: 'POST', body: JSON.stringify(patch) });
+          payData.billing = r.billing;
+          renderPay();
+          toast(okMsg);
+        } catch (e) {
+          toast(e.message, true);
+        }
+      }
+
+      const scopeFlag = () => (payScope === 'platform' && payData?.platformChannel ? { platform: true } : {});
+
+      $('savePayChannel').onclick = () => {
+        savePay(
+          {
+            ...scopeFlag(),
+            gatewayUrl: $('payGateway').value.trim(),
+            mchNo: $('payMchNo').value.trim(),
+            appId: $('payAppId').value.trim(),
+            appSecret: $('payAppSecret').value,
+            wayCode: $('payWayCode').value.trim(),
+            currency: $('payCurrency').value.trim(),
+          },
+          payScope === 'platform' ? '平台通道已保存' : '这家酒店的通道已保存',
+        );
+        // 保存之后清掉密码框：它永远回显不了，留着上一次输入的内容只会让人
+        // 以为下次保存别的字段时它还会被一起提交。
+        $('payAppSecret').value = '';
+      };
+
+      $('payScopeHotel').onclick = () => {
+        payScope = 'hotel';
+        $('payAppSecret').value = '';
+        renderPay();
+      };
+      $('payScopePlatform').onclick = () => {
+        payScope = 'platform';
+        $('payAppSecret').value = '';
+        renderPay();
+      };
+
+      $('probePay').onclick = async () => {
+        const btn = $('probePay');
+        btn.disabled = true;
+        btn.textContent = '测试中…';
+        try {
+          const r = await api('/pay/probe', { method: 'POST', body: JSON.stringify(scopeFlag()) });
+          toast(r.message, !r.ok);
+        } catch (e) {
+          toast(e.message, true);
+        } finally {
+          btn.disabled = false;
+          btn.textContent = '测一下通不通';
+        }
+      };
+
+      $('togglePay').onclick = () => {
+        const cur = payScope === 'platform' && payData?.platformChannel
+          ? payData.platformChannel
+          : payData?.channel;
+        const on = !cur?.enabled;
+        savePay({ ...scopeFlag(), enabled: on }, on ? '收款已开启' : '收款已关闭');
+      };
+
+      $('billMode').onchange = () =>
+        saveBilling({ mode: $('billMode').value }, $('billMode').value === 'guest' ? '已切到客人付费' : '已切到酒店付费');
+
+      $('saveBillDays').onclick = () => {
+        const n = Number($('billAddDays').value.trim());
+        if (!n) return toast('填个天数，正数是加，负数是减', true);
+        saveBilling({ addDays: n }, n > 0 ? '已加 ' + n + ' 天' : '已减 ' + -n + ' 天');
+        $('billAddDays').value = '';
+      };
+
+      $('saveBillGuest').onclick = () => {
+        const plans = $('billGuestPlans')
+          .value.split('\n')
+          .map((l) => l.trim())
+          .filter(Boolean)
+          .map((l) => {
+            const [d, p] = l.split(/[\s,]+/);
+            return { days: Number(d), price: Number(p) };
+          });
+        saveBilling({ guestPlans: plans }, '档位已保存');
+      };
+
+      $('doReconcile').onclick = async () => {
+        const btn = $('doReconcile');
+        btn.disabled = true;
+        try {
+          const r = await api('/pay/reconcile', { method: 'POST' });
+          $('reconcileState').textContent =
+            '查了 ' + r.checked + ' 笔，补回 ' + r.paid + ' 笔，关掉 ' + r.expired + ' 笔';
+          await loadPay();
+        } catch (e) {
+          toast(e.message, true);
+        } finally {
+          btn.disabled = false;
+        }
+      };
+
+      /* 酒店自己扫码续费。二维码在这一页上出，付完自动延到期日。 */
+      $('payInvoice').onclick = async () => {
+        const plans = payData?.billing?.propertyPlans ?? [];
+        if (!plans.length) return toast('没有可选的档位', true);
+        const pick = prompt(
+          '续多久？填天数：\n' + plans.map((p) => `  ${p.days} 天 — ${p.price}`).join('\n'),
+          String(plans[0].days),
+        );
+        if (!pick) return;
+        try {
+          const r = await api('/billing/invoice', {
+            method: 'POST',
+            body: JSON.stringify({ days: Number(pick) }),
+          });
+          showInvoice(r.payment);
+        } catch (e) {
+          toast(e.message, true);
+        }
+      };
+
+      /* 后台里的付款弹层。跟电视上是同一笔单、同一个二维码。 */
+      function showInvoice(order) {
+        const wrap = el('div', {
+          style:
+            'position:fixed;inset:0;background:rgba(0,0,0,.7);display:grid;place-items:center;z-index:50',
+        });
+        const box = el('div', {
+          style:
+            'background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:24px;text-align:center;max-width:360px',
+        });
+        const qr = el('div', {
+          style: 'background:#fff;padding:10px;border-radius:8px;width:220px;height:220px;margin:0 auto 14px',
+        });
+        if (order.qrSvg) qr.innerHTML = order.qrSvg;
+        else qr.append(el('p', { style: 'color:#333;font-size:12px;word-break:break-all', textContent: order.payUrl || order.codeUrl || '没能生成二维码' }));
+
+        const state = el('p', { className: 'hint', style: 'margin:0', textContent: '用手机扫码支付' });
+        const close = el('button', { textContent: '关闭', style: 'margin-top:14px' });
+
+        box.append(
+          el('h2', { style: 'margin:0 0 4px', textContent: order.subject }),
+          el('p', { style: 'font-size:24px;font-weight:700;margin:0 0 14px', textContent: order.amountText }),
+          qr,
+          state,
+          close,
+        );
+        wrap.append(box);
+        document.body.append(wrap);
+
+        let timer = 0;
+        function stop() {
+          clearTimeout(timer);
+          wrap.remove();
+        }
+        close.onclick = stop;
+
+        async function poll() {
+          try {
+            const r = await api('/pay/' + encodeURIComponent(order.orderNo));
+            if (r.order.state === 'paid') {
+              state.textContent = '已到账，服务费已延长';
+              payData.billing = r.billing;
+              renderPay();
+              setTimeout(stop, 1800);
+              return;
+            }
+            if (r.order.state !== 'pending') {
+              state.textContent = '这笔单已经关闭';
+              return;
+            }
+          } catch {
+            /* 抖一下就下一轮再问 */
+          }
+          timer = setTimeout(poll, 2500);
+        }
+        timer = setTimeout(poll, 2500);
+      }
+
+      function logout() {
+        token = '';
+        localStorage.removeItem(KEY);
+        $('app').hidden = true;
+        $('login').hidden = false;
+      }
+      $('logout').onclick = logout;
+
+      async function login(candidate) {
+        const res = await fetch('/api/admin/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: candidate }),
+        });
+        if (!res.ok) throw new Error('密码不对');
+        const body = await res.json().catch(() => ({}));
+        token = candidate;
+        localStorage.setItem(KEY, token);
+        scope = body.scope === 'platform' ? 'platform' : 'property';
+        propList = body.properties ?? (body.property ? [body.property] : []);
+        currentProp = propList[0]?.id ?? null;
+        $('login').hidden = true;
+        $('app').hidden = false;
+        applyScope();
+        await refresh();
+      }
+
+      $('doLogin').onclick = async () => {
+        try {
+          await login($('pw').value);
+        } catch (e) {
+          toast(e.message, true);
+        }
+      };
+      $('pw').onkeydown = (e) => {
+        if (e.key === 'Enter') $('doLogin').click();
+      };
+
+      // A saved token is verified by actually using it, not trusted blindly.
+      (async () => {
+        if (!token) return void ($('login').hidden = false);
+        try {
+          // 先问「我是谁」，再决定看得到什么。
+          const who = await api('/properties');
+          scope = who.scope;
+          propList = who.properties ?? [];
+          currentProp = propList[0]?.id ?? null;
+          applyScope();
+          await refresh();
+          $('app').hidden = false;
+        } catch {
+          logout();
+        }
+      })();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,263 @@
+// Storage layer. Uses Node's built-in SQLite so there is no native module to
+// compile and nothing extra to run alongside the service.
+import { DatabaseSync } from 'node:sqlite';
+import { mkdirSync } from 'node:fs';
+import { dirname } from 'node:path';
+import { config } from './config.js';
+
+mkdirSync(dirname(config.dbFile), { recursive: true });
+export const db = new DatabaseSync(config.dbFile);
+
+db.exec(`
+  PRAGMA journal_mode = WAL;
+
+  -- One row per set-top box. 'code' is the 6-digit pairing code shown on
+  -- screen while the box is still unbound.
+  CREATE TABLE IF NOT EXISTS devices (
+    device_id     TEXT PRIMARY KEY,
+    mac           TEXT,
+    code          TEXT,
+    room_id       TEXT,
+    line_user     TEXT,
+    line_pass     TEXT,
+    label         TEXT,
+    last_seen     INTEGER,
+    created_at    INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_devices_code ON devices(code);
+  CREATE INDEX IF NOT EXISTS idx_devices_mac  ON devices(mac);
+
+  -- Rooms are the unit the hospitality side works in. Kept deliberately
+  -- thin so a real PMS can later become the source of truth.
+  CREATE TABLE IF NOT EXISTS rooms (
+    room_id     TEXT PRIMARY KEY,
+    building    TEXT,
+    floor       TEXT,
+    guest_name  TEXT,
+    checked_in  INTEGER NOT NULL DEFAULT 0,
+    updated_at  INTEGER NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS service_items (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    category    TEXT NOT NULL,
+    name_en     TEXT NOT NULL,
+    name_zh     TEXT,
+    name_id     TEXT,
+    name_km     TEXT,
+    price       REAL NOT NULL DEFAULT 0,
+    currency    TEXT NOT NULL DEFAULT 'IDR',
+    image       TEXT,
+    available   INTEGER NOT NULL DEFAULT 1,
+    sort_order  INTEGER NOT NULL DEFAULT 0
+  );
+
+  CREATE TABLE IF NOT EXISTS orders (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    room_id     TEXT,
+    device_id   TEXT,
+    items_json  TEXT NOT NULL,
+    total       REAL NOT NULL DEFAULT 0,
+    note        TEXT,
+    status      TEXT NOT NULL DEFAULT 'new',
+    created_at  INTEGER NOT NULL
+  );
+
+  -- Operator-editable runtime settings. Every key has a working default in
+  -- config.js; a row here simply overrides it, so the service still boots
+  -- correctly with an empty table and nothing has to be re-deployed to change
+  -- a background image.
+  CREATE TABLE IF NOT EXISTS settings (
+    key        TEXT PRIMARY KEY,
+    value      TEXT,
+    updated_at INTEGER NOT NULL
+  );
+
+  -- Files uploaded through the admin console. The bytes live on disk under
+  -- the media directory; this is the index the console lists from.
+  CREATE TABLE IF NOT EXISTS media (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    filename    TEXT NOT NULL UNIQUE,
+    original    TEXT,
+    kind        TEXT NOT NULL,
+    mime        TEXT,
+    bytes       INTEGER NOT NULL DEFAULT 0,
+    created_at  INTEGER NOT NULL
+  );
+
+  -- Messages pushed to a room (or broadcast when room_id IS NULL).
+  CREATE TABLE IF NOT EXISTS notices (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    room_id     TEXT,
+    title       TEXT NOT NULL,
+    body        TEXT,
+    created_at  INTEGER NOT NULL,
+    expires_at  INTEGER
+  );
+`);
+
+/**
+ * Columns added after a database was already in service.
+ *
+ * `CREATE TABLE IF NOT EXISTS` above leaves an existing table alone, so a
+ * deployed box would never see a new column. Adding them here keeps a fresh
+ * install and an upgraded one identical, and re-running is harmless.
+ */
+function addColumn(table, column, decl) {
+  const have = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (have.some((c) => c.name === column)) return;
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${decl}`);
+}
+
+addColumn('service_items', 'name_km', 'TEXT');
+
+// How long this box may watch gated content for. Set by a guest paying for a
+// pass; null/0 means no pass. Irrelevant while the property itself is paid up -
+// see billing.js.
+addColumn('devices', 'content_until', 'INTEGER');
+
+// Whether this box may show the restricted section at all. Off unless an
+// operator turns it on for that room, which is the only safe default: a
+// dormitory or a family floor should never have the section to unlock.
+addColumn('devices', 'adult_allowed', 'INTEGER NOT NULL DEFAULT 0');
+
+
+// ---------------------------------------------------------------- 多租户
+
+/*
+ * 一台服务器，很多家酒店。
+ *
+ * APK 里只有一个地址，十家酒店的盒子都打到这里，所以「这台盒子是哪家的」
+ * 必须由服务端自己认出来。房间号只在一家酒店内唯一 —— A 店的 301 和 B 店的
+ * 301 是两个房间，这件事必须写在主键里，不能靠调用方记得带上条件。
+ *
+ * 下面这段迁移对已经在跑的库是安全的、可重复执行的：第一次跑会把现有的一切
+ * 归到 1 号酒店（名字取自原来的 home.propertyName），之后再跑什么都不做。
+ */
+db.exec(`
+  CREATE TABLE IF NOT EXISTS properties (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    slug        TEXT NOT NULL UNIQUE,
+    name        TEXT NOT NULL,
+    contact     TEXT,
+    -- 这家前台自己的后台口令。存的是 scrypt 摘要，不是口令本身。
+    token_hash  TEXT,
+    token_salt  TEXT,
+    -- 留空 = 用平台默认线路。想给某一家单独换片库就填这里。
+    line_user   TEXT,
+    line_pass   TEXT,
+    active      INTEGER NOT NULL DEFAULT 1,
+    created_at  INTEGER NOT NULL
+  );
+`);
+
+// 归属字段。加在这里而不是建表语句里，是因为这些表早就有数据了。
+addColumn('devices', 'property_id', 'INTEGER');
+addColumn('service_items', 'property_id', 'INTEGER');
+addColumn('orders', 'property_id', 'INTEGER');
+addColumn('notices', 'property_id', 'INTEGER');
+// 素材也分家：A 店传的酒店照片不该出现在 B 店的素材库里。
+addColumn('media', 'property_id', 'INTEGER');
+
+/**
+ * 换主键要重建表 —— SQLite 的 ALTER TABLE 改不了主键。
+ *
+ * `rooms.room_id` 原来是全局主键，也就是说十家酒店共用一套房间号：
+ * A 店给 301 退房会把 B 店 301 的客人姓名一起清掉。必须变成
+ * (property_id, room_id)。
+ */
+function rebuild(table, ddl, columns, fill) {
+  const info = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (!info.length) return false;
+  // 已经是新结构就不动。判断依据：property_id 在不在主键里。
+  if (info.some((c) => c.name === 'property_id' && c.pk > 0)) return false;
+
+  db.exec('PRAGMA foreign_keys = OFF');
+  db.exec(`ALTER TABLE ${table} RENAME TO ${table}_old`);
+  db.exec(ddl);
+  db.exec(
+    `INSERT INTO ${table} (property_id, ${columns.join(', ')})
+     SELECT ${fill}, ${columns.join(', ')} FROM ${table}_old`,
+  );
+  db.exec(`DROP TABLE ${table}_old`);
+  db.exec('PRAGMA foreign_keys = ON');
+  return true;
+}
+
+const roomsRebuilt = rebuild(
+  'rooms',
+  `CREATE TABLE rooms (
+     property_id INTEGER NOT NULL,
+     room_id     TEXT NOT NULL,
+     building    TEXT,
+     floor       TEXT,
+     guest_name  TEXT,
+     checked_in  INTEGER NOT NULL DEFAULT 0,
+     updated_at  INTEGER NOT NULL,
+     PRIMARY KEY (property_id, room_id)
+   )`,
+  ['room_id', 'building', 'floor', 'guest_name', 'checked_in', 'updated_at'],
+  '1',
+);
+
+/*
+ * settings 同理，而且这张表的后果更直接：原来全局只有一行
+ * home.propertyName，十家酒店的电视会显示同一个名字、同一张背景。
+ *
+ * property_id = 0 留给平台自己（后台总口令、我们自己的收款商户、默认线路），
+ * 1 以上是各家酒店。
+ */
+const settingsRebuilt = rebuild(
+  'settings',
+  `CREATE TABLE settings (
+     property_id INTEGER NOT NULL,
+     key         TEXT NOT NULL,
+     value       TEXT,
+     updated_at  INTEGER NOT NULL,
+     PRIMARY KEY (property_id, key)
+   )`,
+  ['key', 'value', 'updated_at'],
+  // 后台总口令是平台的，别的都属于第一家酒店。
+  `CASE WHEN key IN ('admin.token') THEN 0 ELSE 1 END`,
+);
+
+/**
+ * 第一家酒店。
+ *
+ * 只在库里已经有东西、却还没有任何酒店的时候建 —— 也就是从单店版升级上来的
+ * 那一次。全新安装什么都不建，第一家由操作员在后台自己填。
+ */
+function seedFirstProperty() {
+  if (db.prepare('SELECT COUNT(*) n FROM properties').get().n > 0) return;
+
+  const hasData =
+    db.prepare('SELECT COUNT(*) n FROM devices').get().n > 0 ||
+    db.prepare('SELECT COUNT(*) n FROM settings').get().n > 0;
+  if (!hasData) return;
+
+  const name =
+    db.prepare("SELECT value FROM settings WHERE property_id = 1 AND key = 'home.propertyName'").get()
+      ?.value || 'KDTV';
+
+  db.prepare(
+    'INSERT INTO properties (id, slug, name, active, created_at) VALUES (1, ?, ?, 1, ?)',
+  ).run('house', name, Math.floor(Date.now() / 1000));
+}
+
+seedFirstProperty();
+
+// 存量的盒子、菜单、订单、通知都归第一家。
+if (db.prepare('SELECT COUNT(*) n FROM properties').get().n > 0) {
+  const first = db.prepare('SELECT MIN(id) id FROM properties').get().id;
+  for (const t of ['devices', 'service_items', 'orders', 'notices', 'media']) {
+    db.prepare(`UPDATE ${t} SET property_id = ? WHERE property_id IS NULL`).run(first);
+  }
+}
+
+if (roomsRebuilt || settingsRebuilt) {
+  console.log('[db] 已迁移到多租户结构：rooms/settings 主键改为 (property_id, …)');
+}
+
+export const PLATFORM = 0;
+
+export const now = () => Math.floor(Date.now() / 1000);

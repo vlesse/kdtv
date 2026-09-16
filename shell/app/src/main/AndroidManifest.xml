@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <!-- 开机自启。见 BootReceiver：酒店里通电就该出画面，没人会先找图标。 -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!-- Android TV boxes have no touchscreen; declaring these optional keeps
+         the app installable on both TV boxes and tablets. -->
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <uses-feature android:name="android.software.leanback" android:required="false" />
+
+    <application
+        android:allowBackup="false"
+        android:banner="@drawable/ic_banner"
+        android:icon="@drawable/ic_launcher"
+        android:label="@string/app_name"
+        android:usesCleartextTraffic="true"
+        android:theme="@style/Theme.WeWatch">
+
+        <activity
+            android:name=".MainActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden|navigation"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:screenOrientation="landscape">
+
+            <!-- LEANBACK_LAUNCHER puts the app on the Android TV home row.
+                 LAUNCHER keeps it visible on ordinary tablets too. -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!--
+                当桌面。
+
+                装机时在系统里把本应用设成默认桌面，开机就直接进来，按 Home
+                键也回到这里 —— 这是酒店场景里最可靠的「开机自启」，而且顺带
+                把客人挡在系统设置外面。
+
+                只是「可以被选成桌面」，不是「强制成为桌面」：不设默认的话，
+                这里什么都不会发生，开机自启就退回到 BootReceiver 那条路。
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <!--
+            开机广播。exported 必须是 true —— 发广播的是系统，不是我们自己。
+            directBootAware 不开：我们要等用户解锁后的存储，而机顶盒没有锁屏，
+            这一步不会卡住。
+        -->
+        <receiver
+            android:name=".BootReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter android:priority="1000">
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="android.intent.action.REBOOT" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

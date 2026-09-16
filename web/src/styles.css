@@ -1,0 +1,2612 @@
+/*
+ * Khmer.
+ *
+ * Cheap Android boxes routinely ship without Khmer glyphs, and the fallback is
+ * a row of tofu rather than merely ugly type. This is the Khmer block only
+ * (57 KB), self-hosted rather than pulled from a CDN so a box that can reach
+ * the panel and nothing else still renders - and `unicode-range` means a
+ * viewer reading Chinese or English never downloads it at all.
+ */
+@font-face {
+  font-family: 'Noto Sans Khmer';
+  src: url('/fonts/noto-sans-khmer.woff2') format('woff2');
+  font-weight: 100 900;
+  font-display: swap;
+  unicode-range: U+1780-17FF, U+19E0-19FF, U+200C-200D, U+25CC;
+}
+
+/* =========================================================================
+   KDTV - design system
+
+   Built for a 10-foot viewing distance first: everything scales off the
+   viewport so one layout serves 720p boxes, 1080p panels and 4K TVs, then
+   falls back to a touch layout on phones and tablets.
+   ========================================================================= */
+
+:root {
+  /* Type scale is driven by viewport width on TV so the UI stays
+     proportional on any panel size. 1rem = 16px at a 1920px reference. */
+  font-size: clamp(11px, calc(100vw / 120), 26px);
+
+  --bg: #05070d;
+  --bg-elev: #0e1420;
+  --surface: #161e2e;
+  --surface-hi: #212c40;
+  --line: rgba(255, 255, 255, 0.08);
+
+  --text: #edf1f7;
+  --muted: #93a0b5;
+  --dim: #5d6a80;
+
+  --accent: #ff2d55;
+  --accent-2: #00b8d4;
+  --accent-soft: rgba(255, 45, 85, 0.16);
+
+  --ok: #22c55e;
+  --warn: #f59e0b;
+
+  --radius: 0.75rem;
+  --radius-lg: 1.25rem;
+
+  /* TV overscan. Nothing meaningful may sit outside this. */
+  --safe-x: 4vw;
+  --safe-y: 3.5vh;
+
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  /* Khmer first: it only ever matches Khmer codepoints (see @font-face above),
+     so it costs the other three languages nothing. */
+  font-family: 'Noto Sans Khmer', 'Inter', 'Noto Sans', 'PingFang SC', 'Microsoft YaHei',
+    system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+#app {
+  height: 100%;
+  position: relative;
+}
+
+img {
+  max-width: 100%;
+}
+
+/* ---------------------------------------------------------------- focus */
+
+.focusable {
+  outline: none;
+  transition: transform 0.18s var(--ease), box-shadow 0.18s var(--ease),
+    background-color 0.18s var(--ease);
+}
+
+.focusable:focus {
+  transform: scale(1.06);
+  box-shadow: 0 0 0 0.19rem #fff, 0 0.75rem 2rem rgba(0, 0, 0, 0.6);
+  z-index: 5;
+}
+
+/* Cards lift rather than just outline - reads better across a room. */
+.card.focusable:focus {
+  box-shadow: 0 0 0 0.19rem #fff, 0 1rem 2.5rem rgba(0, 0, 0, 0.75);
+}
+
+/* ---------------------------------------------------------------- shell */
+
+.screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  animation: fade 0.25s var(--ease);
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+    transform: translateY(0.75rem);
+  }
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: var(--safe-y) var(--safe-x) 0.75rem;
+  flex: none;
+}
+
+.brand {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  font-weight: 800;
+  font-size: 1.6rem;
+  letter-spacing: -0.02em;
+}
+
+.brand em {
+  font-style: normal;
+  color: var(--accent);
+}
+
+.tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-left: 1.5rem;
+}
+
+.tab {
+  padding: 0.5rem 1.1rem;
+  border-radius: 999px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 1rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.tab[aria-selected='true'] {
+  background: var(--accent);
+  color: #fff;
+}
+
+.tab:focus {
+  background: #fff;
+  color: #05070d;
+}
+
+.topbar-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.pill {
+  padding: 0.35rem 0.8rem;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  font-weight: 600;
+}
+
+.pill.live {
+  color: var(--accent);
+  border-color: var(--accent-soft);
+  background: var(--accent-soft);
+}
+
+.body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+  padding-bottom: var(--safe-y);
+}
+
+.body::-webkit-scrollbar {
+  display: none;
+}
+
+/* ---------------------------------------------------------------- hero */
+
+.hero {
+  position: relative;
+  margin: 0 var(--safe-x) 1.5rem;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  min-height: 34vh;
+  display: flex;
+  align-items: flex-end;
+  background: radial-gradient(120% 140% at 12% 20%, #1d2b4d 0%, #0b1220 55%, #05070d 100%);
+  border: 1px solid var(--line);
+}
+
+.hero::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(5, 7, 13, 0.92) 0%, rgba(5, 7, 13, 0.35) 55%, transparent 100%);
+}
+
+.hero-inner {
+  position: relative;
+  z-index: 1;
+  padding: 2rem 2.5rem;
+  max-width: 46rem;
+}
+
+.hero h1 {
+  margin: 0.5rem 0 0.6rem;
+  font-size: 2.6rem;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+}
+
+.hero p {
+  margin: 0 0 1.25rem;
+  color: var(--muted);
+  font-size: 1.05rem;
+  line-height: 1.5;
+}
+
+.kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 0.9rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: pulse 1.8s infinite;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.75rem 1.6rem;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-family: inherit;
+  font-size: 1.05rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/*
+ * 次要按钮。
+ *
+ * 边框原来用 --line（8% 白）—— 那个值是给「两块深色面板之间的分隔」定的，
+ * 压在任何有内容的背景上都等于没有。按钮跟分隔线不是一回事：**按钮要让人
+ * 在没选中的时候就看得出它是个按钮**，否则界面上就只有一个孤零零的高亮块，
+ * 旁边那些要靠猜。
+ */
+.btn.ghost {
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.34);
+}
+
+.btn:focus {
+  background: #fff;
+  color: #05070d;
+}
+
+/* ---------------------------------------------------------------- rails */
+
+.rail {
+  margin-bottom: 1.75rem;
+}
+
+.rail-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  padding: 0 var(--safe-x);
+  margin-bottom: 0.85rem;
+}
+
+.rail-head h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  letter-spacing: -0.01em;
+}
+
+.rail-head span {
+  color: var(--dim);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.rail-track {
+  display: flex;
+  gap: 1rem;
+  padding: 0.65rem var(--safe-x);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.rail-track::-webkit-scrollbar {
+  display: none;
+}
+
+.card {
+  flex: none;
+  width: 11.5rem;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  overflow: hidden;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  color: inherit;
+  padding: 0;
+}
+
+.card-art {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, var(--c1, #24314d), var(--c2, #131b2b));
+}
+
+.card-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  padding: 12%;
+}
+
+.card-initial {
+  font-size: clamp(0.9rem, 1.55rem, 1.9rem);
+  padding: 0 0.5rem;
+  text-align: center;
+  line-height: 1.1;
+  word-break: break-word;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.9);
+  letter-spacing: -0.04em;
+}
+
+.card-num {
+  position: absolute;
+  top: 0.5rem;
+  left: 0.5rem;
+  background: rgba(0, 0, 0, 0.6);
+  border-radius: 0.4rem;
+  padding: 0.15rem 0.45rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.card-meta {
+  padding: 0.6rem 0.7rem 0.75rem;
+}
+
+.card-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.card-sub {
+  margin-top: 0.2rem;
+  font-size: 0.8rem;
+  color: var(--dim);
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ---------------------------------------------------------------- player */
+
+.player {
+  position: absolute;
+  inset: 0;
+  background: #000;
+}
+
+.player video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
+}
+
+.player-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.75) 0%, transparent 22%, transparent 60%, rgba(0, 0, 0, 0.88) 100%);
+  transition: opacity 0.3s var(--ease);
+}
+
+.player-overlay[data-hidden='true'] {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/*
+ * 播放器里的按钮，背后是**正在放的画面** —— 下一秒是雪景还是夜戏都不知道。
+ * 所以这里不靠半透明白（亮画面上就糊了），改成自带一层黑底，
+ * 再加一圈更亮的边。跟右上角那块诊断叠层是同一个道理。
+ */
+.player .btn.ghost {
+  background: rgba(0, 0, 0, 0.58);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+/*
+ * 焦点：换底色，**不换字色**。
+ *
+ * 全局那条 `.btn:focus` 是白底黑字。在这台盒子上，字色立刻翻成黑、背景却要
+ * 晚一两帧才重绘完 —— 中间那几帧是黑字压在黑底上，什么都看不见。按着方向键
+ * 连续移动的时候，这几帧就是你一直看到的样子（用户报的「按钮看不见」就是它）。
+ *
+ * 所以这里让字一直是白的：底色从半透明黑变成主色，**任何一帧都是白字压在
+ * 深色上**，重绘快慢都不影响读得出来。顺带也跟「频道列表」那个主按钮统一了。
+ */
+.player .btn:focus {
+  background: var(--accent);
+  color: #fff;
+  border-color: #fff;
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.55);
+}
+
+.player-top {
+  padding: var(--safe-y) var(--safe-x);
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.now-title {
+  font-size: 1.7rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.now-sub {
+  color: var(--muted);
+  font-size: 1rem;
+  margin-top: 0.2rem;
+}
+
+.player-bottom {
+  padding: 1rem var(--safe-x) var(--safe-y);
+}
+
+.epg-strip {
+  display: flex;
+  gap: 0.75rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-top: 0.5rem;
+}
+
+.epg-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.epg-item {
+  flex: none;
+  width: 16rem;
+  padding: 0.7rem 0.9rem;
+  border-radius: var(--radius);
+  background: rgba(22, 30, 46, 0.85);
+  border: 1px solid var(--line);
+}
+
+.epg-item.on-now {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.epg-time {
+  font-size: 0.8rem;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.epg-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin-top: 0.2rem;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Channel switcher that slides over the video. */
+.zapper {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 26rem;
+  background: rgba(5, 7, 13, 0.94);
+  border-left: 1px solid var(--line);
+  padding: var(--safe-y) 1.25rem;
+  overflow-y: auto;
+  scrollbar-width: none;
+  transform: translateX(100%);
+  transition: transform 0.28s var(--ease);
+}
+
+.zapper[data-open='true'] {
+  transform: none;
+}
+
+.zapper::-webkit-scrollbar {
+  display: none;
+}
+
+.zap-row {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  width: 100%;
+  padding: 0.6rem 0.7rem;
+  border-radius: var(--radius);
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.zap-row.active {
+  background: var(--accent-soft);
+}
+
+.zap-logo {
+  flex: none;
+  width: 3.4rem;
+  height: 2.2rem;
+  border-radius: 0.4rem;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, var(--c1, #24314d), var(--c2, #131b2b));
+  font-weight: 800;
+  font-size: 0.85rem;
+}
+
+/* ---------------------------------------------------------------- service */
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: 1rem;
+  padding: 0 var(--safe-x);
+}
+
+.svc {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 1.1rem;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  cursor: pointer;
+  font-family: inherit;
+  color: inherit;
+  text-align: left;
+}
+
+.svc-name {
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.svc-zh {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.svc-price {
+  margin-top: 0.4rem;
+  color: var(--accent);
+  font-weight: 800;
+  font-size: 1rem;
+}
+
+.svc-price.free {
+  color: var(--ok);
+}
+
+.qty {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--dim);
+}
+
+.qty b {
+  color: var(--text);
+}
+
+.cartbar {
+  position: absolute;
+  left: var(--safe-x);
+  right: var(--safe-x);
+  bottom: var(--safe-y);
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  border-radius: var(--radius-lg);
+  background: rgba(22, 30, 46, 0.97);
+  border: 1px solid var(--line);
+  box-shadow: 0 1rem 3rem rgba(0, 0, 0, 0.6);
+}
+
+.cartbar strong {
+  font-size: 1.15rem;
+}
+
+.cartbar .spacer {
+  flex: 1;
+}
+
+/* ---------------------------------------------------------------- misc */
+
+.centre {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  padding: var(--safe-y) var(--safe-x);
+}
+
+.code {
+  font-size: 4.5rem;
+  font-weight: 800;
+  letter-spacing: 0.35em;
+  color: var(--accent);
+  margin: 1rem 0;
+  text-indent: 0.35em;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.toast {
+  position: absolute;
+  left: 50%;
+  bottom: 12vh;
+  transform: translateX(-50%);
+  padding: 0.9rem 1.6rem;
+  border-radius: 999px;
+  background: var(--surface-hi);
+  border: 1px solid var(--line);
+  font-weight: 600;
+  box-shadow: 0 0.75rem 2rem rgba(0, 0, 0, 0.6);
+  animation: fade 0.2s var(--ease);
+  z-index: 50;
+}
+
+.spinner {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 50%;
+  border: 0.22rem solid rgba(255, 255, 255, 0.15);
+  border-top-color: var(--accent);
+  animation: spin 0.8s linear infinite;
+  margin: 0 auto 1rem;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ------------------------------------------------------- touch fallback */
+
+/* Phones and tablets: drop the viewport-scaled type, widen the safe area
+   back to normal padding, and let rails become comfortable to swipe. */
+@media (max-width: 900px) {
+  :root {
+    font-size: 15px;
+    --safe-x: 1rem;
+    --safe-y: 1rem;
+  }
+
+  .hero h1 {
+    font-size: 1.8rem;
+  }
+
+  .card {
+    width: 9rem;
+  }
+
+  .zapper {
+    width: 100%;
+  }
+
+  /* The topbar is a single row on TV; on a handset it has to wrap and the
+     tab strip has to scroll, or the last tabs sit off-screen. */
+  .topbar {
+    flex-wrap: wrap;
+    gap: 0.5rem 0.75rem;
+  }
+
+  .tabs {
+    margin-left: 0;
+    order: 3;
+    width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding-bottom: 0.15rem;
+  }
+
+  .tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .tab {
+    flex: none;
+  }
+
+  .topbar-right {
+    font-size: 0.85rem;
+    gap: 0.5rem;
+  }
+
+  .hero-inner {
+    padding: 1.25rem 1.25rem 1.5rem;
+  }
+
+  .grid {
+    grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+  }
+
+  .focusable:focus {
+    transform: none;
+    box-shadow: 0 0 0 2px var(--accent);
+  }
+}
+
+/* ------------------------------------------------------------------- vod */
+
+/* Posters are 2:3, so a shelf of them needs less width per title than the
+   16:9 channel cards do. */
+.rail-track.posters {
+  align-items: flex-start;
+}
+
+.poster {
+  flex: none;
+  width: 9.5rem;
+  border-radius: var(--radius);
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  color: inherit;
+}
+
+.poster-art {
+  position: relative;
+  aspect-ratio: 2 / 3;
+  border-radius: var(--radius);
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, var(--c1, #24314d), var(--c2, #131b2b));
+  border: 1px solid var(--line);
+}
+
+.poster-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.poster.focusable:focus {
+  box-shadow: none;
+}
+
+.poster.focusable:focus .poster-art {
+  box-shadow: 0 0 0 0.19rem #fff, 0 1rem 2.5rem rgba(0, 0, 0, 0.75);
+}
+
+.poster-tag,
+.poster-rating {
+  position: absolute;
+  top: 0.4rem;
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  padding: 0.15rem 0.4rem;
+  border-radius: 0.35rem;
+  background: rgba(0, 0, 0, 0.72);
+}
+
+.poster-tag {
+  left: 0.4rem;
+  color: var(--accent-2);
+}
+
+.poster-rating {
+  right: 0.4rem;
+  color: var(--warn);
+}
+
+.poster-title {
+  margin-top: 0.45rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.poster-sub {
+  margin-top: 0.15rem;
+  font-size: 0.76rem;
+  color: var(--dim);
+}
+
+/* ---------------------------------------------------------------- detail */
+
+.detail {
+  display: flex;
+  gap: 2rem;
+  padding: var(--safe-y) var(--safe-x) 1rem;
+  align-items: flex-start;
+}
+
+.detail-poster {
+  flex: none;
+  width: 14rem;
+  aspect-ratio: 2 / 3;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  display: grid;
+  place-items: center;
+}
+
+.detail-poster img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.detail-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.detail-info h1 {
+  margin: 0.5rem 0;
+  font-size: clamp(1.4rem, 2.4rem, 2.8rem);
+  line-height: 1.1;
+}
+
+.detail-facts {
+  color: var(--accent-2);
+  font-weight: 600;
+  margin: 0 0 0.75rem;
+}
+
+/* Long plots are common in collected metadata; clamp so the buttons below
+   stay on screen at 720p. */
+.detail-plot {
+  color: var(--text);
+  max-width: 46rem;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.detail-info .muted {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.detail-actions {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.episodes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+  gap: 0.6rem;
+  padding: 0 var(--safe-x) var(--safe-y);
+}
+
+.episode {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.7rem 0.85rem;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: inherit;
+  font-family: inherit;
+  font-size: 0.88rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.episode-num {
+  flex: none;
+  min-width: 1.9rem;
+  height: 1.9rem;
+  border-radius: 0.5rem;
+  display: grid;
+  place-items: center;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 800;
+}
+
+.episode-title {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ------------------------------------------------------------ vod player */
+
+.seek {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.9rem;
+}
+
+.seek .time {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.85rem;
+  color: var(--muted);
+  flex: none;
+}
+
+.seek-bar {
+  flex: 1;
+  height: 0.35rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.22);
+  position: relative;
+  display: block;
+}
+
+.seek-bar:focus {
+  height: 0.6rem;
+}
+
+.seek-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+@media (max-width: 900px) {
+  .detail {
+    flex-direction: column;
+    gap: 1rem;
+  }
+  .detail-poster {
+    width: 8rem;
+  }
+  .poster {
+    width: 7.5rem;
+  }
+}
+
+/* ------------------------------------------------------------- language */
+
+.pill.lang {
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+  border: 1px solid var(--line);
+  color: var(--text);
+}
+
+/* A remote has no menu bar, so choices arrive as a centred sheet. */
+.backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  background: rgba(3, 5, 10, 0.78);
+  animation: fade 0.18s var(--ease);
+}
+
+.sheet {
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: 1.75rem 2rem;
+  min-width: min(26rem, 82vw);
+  box-shadow: 0 1.5rem 4rem rgba(0, 0, 0, 0.7);
+}
+
+.sheet h2 {
+  margin: 0 0 1.1rem;
+  font-size: 1.15rem;
+}
+
+.sheet-options {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.sheet-options .btn {
+  width: 100%;
+  text-align: center;
+}
+
+.hero-actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+/*
+ * Khmer and Chinese labels are much longer than the Indonesian ones the
+ * layout was first drawn around. On a handset they wrapped inside a pill
+ * button, which reads as broken; stacking full-width keeps them legible.
+ */
+@media (max-width: 620px) {
+  .hero-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .hero-actions .btn {
+    width: 100%;
+    border-radius: var(--radius);
+  }
+}
+
+/* =============================================================== curtain */
+
+/*
+ * Shown between pressing a channel and the first frame arriving.
+ *
+ * The property's own picture goes behind it (--brand-loading, set by
+ * /theme.css), which is the point: several seconds of black on a television
+ * reads as a dead box, and the same seconds over a photo with the channel
+ * name on it read as tuning.
+ */
+.curtain {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  opacity: 1;
+  transition: opacity 0.3s ease;
+}
+
+.curtain[data-state='hidden'] {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.curtain-photo {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(4, 8, 14, 0.62), rgba(2, 5, 10, 0.88)),
+    var(--brand-loading, none),
+    linear-gradient(150deg, #0b2136 0%, #071522 60%, #040d16 100%);
+  background-size: cover;
+  background-position: center;
+}
+
+.curtain-body {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.7rem;
+  text-align: center;
+  padding: 0 var(--safe-x);
+}
+
+.curtain-title {
+  font-size: clamp(1.3rem, 2.6vw, 3rem);
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.7);
+}
+
+.curtain-sub {
+  font-size: clamp(0.85rem, 1.3vw, 1.4rem);
+  color: var(--muted);
+}
+
+.curtain-wait {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1.4rem;
+  color: var(--muted);
+  font-size: clamp(0.8rem, 1.15vw, 1.2rem);
+}
+
+.curtain-dots {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.curtain-dots i {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: currentColor;
+  animation: splash-pulse 1.2s ease-in-out infinite;
+}
+
+.curtain-dots i:nth-child(2) {
+  animation-delay: 0.16s;
+}
+
+.curtain-dots i:nth-child(3) {
+  animation-delay: 0.32s;
+}
+
+@keyframes splash-pulse {
+  0%,
+  70%,
+  100% {
+    opacity: 0.25;
+    transform: scale(0.8);
+  }
+  35% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* A source that will not open keeps the picture and the name, and swaps the
+   pulsing dots - which promise progress - for a plain statement. */
+.curtain[data-state='failed'] .curtain-dots {
+  display: none;
+}
+
+.curtain[data-state='failed'] .curtain-status {
+  color: var(--warn);
+  font-weight: 600;
+}
+
+/*
+ * An interruption after playback has begun gets a corner indicator, not the
+ * curtain. Covering the whole screen for a two-second rebuffer - or for a
+ * reconnect that is about to succeed - hides video that is coming right back,
+ * which is more disruptive than the interruption itself.
+ *
+ * Selectors are written out rather than folded into :is(), because the WebView
+ * on a cheap box is not always new enough for it and a dropped rule here means
+ * a full-screen cover over live video.
+ */
+.curtain[data-state='buffering'] .curtain-photo,
+.curtain[data-state='buffering'] .curtain-title,
+.curtain[data-state='buffering'] .curtain-sub,
+.curtain[data-state='recovering'] .curtain-photo,
+.curtain[data-state='recovering'] .curtain-title,
+.curtain[data-state='recovering'] .curtain-sub {
+  opacity: 0;
+}
+
+.curtain[data-state='buffering'] .curtain-body,
+.curtain[data-state='recovering'] .curtain-body {
+  inset: auto auto var(--safe-y) var(--safe-x);
+  padding: 0;
+}
+
+.curtain[data-state='buffering'] .curtain-wait,
+.curtain[data-state='recovering'] .curtain-wait {
+  margin: 0;
+  padding: 0.5rem 0.9rem;
+  border-radius: 999px;
+  background: rgba(6, 10, 18, 0.72);
+  color: var(--text);
+}
+
+/* Reconnecting is not the same as buffering and should not read as routine -
+   amber says something went wrong, while the picture staying up says it is
+   expected back. */
+.curtain[data-state='recovering'] .curtain-status {
+  color: var(--warn);
+}
+
+/*
+ * The retry button exists only on a failure. It is display:none rather than
+ * transparent everywhere else on purpose: the D-pad picks candidates out of
+ * the live layout, and an invisible-but-present button would silently swallow
+ * presses during normal playback.
+ */
+.curtain-retry {
+  display: none;
+  margin-top: 1.5rem;
+}
+
+.curtain[data-state='failed'] .curtain-retry {
+  display: inline-flex;
+}
+
+.curtain-photo,
+.curtain-title,
+.curtain-sub {
+  transition: opacity 0.25s ease;
+}
+
+/* ============================================================== launcher */
+
+.launcher {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/*
+ * The property's own photo goes here via HOME_BACKGROUND_URL. Until one is
+ * configured this stands in - a built gradient rather than someone else's
+ * resort picture, which is not ours to ship.
+ */
+.launcher-bg {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(60% 42% at 80% 12%, rgba(255, 226, 168, 0.55), transparent 62%),
+    radial-gradient(70% 38% at 18% 8%, rgba(150, 216, 255, 0.35), transparent 65%),
+    linear-gradient(
+      180deg,
+      #0a3f68 0%,
+      #10618f 18%,
+      #1f8bb4 38%,
+      #56b6cc 50%,
+      #1d7ea3 52%,
+      #0f5c85 70%,
+      #062f4c 100%
+    );
+  background-size: cover;
+  background-position: center;
+}
+
+/* Water: a wide soft band across the lower half, so the tiles sit on it. */
+.launcher-bg::after {
+  content: '';
+  position: absolute;
+  inset: 52% 0 0;
+  background:
+    linear-gradient(180deg, rgba(9, 60, 92, 0) 0%, rgba(8, 74, 110, 0.55) 22%, rgba(4, 32, 52, 0.9) 100%),
+    repeating-linear-gradient(
+      178deg,
+      rgba(255, 255, 255, 0.05) 0 2px,
+      rgba(255, 255, 255, 0) 2px 14px
+    );
+}
+
+/*
+ * The configured photo or video gets its own layer, between the gradient and
+ * the scrim.
+ *
+ * It is separate from .launcher-bg for one reason: the colour grading below is
+ * a `filter`, and a filter applies to the whole subtree. Grading the backdrop
+ * itself would drag the scrim through the same correction and undo the
+ * contrast that keeps the tiles readable.
+ */
+.launcher-photo {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background-size: cover;
+  background-position: center;
+}
+
+.launcher-photo[data-on] {
+  /* --bg-photo is set by the launcher once the property config arrives. */
+  background-image: var(--bg-photo);
+}
+
+/*
+ * The grade is for stills only, and deliberately not for video.
+ *
+ * A generated still tends to arrive soft and a little flat, and a source
+ * smaller than the panel gets upscaled on top of that; this is the cheap
+ * correction, applied once. A video is graded already, and a `filter` over one
+ * costs a full-resolution pass every single frame - twenty-five times a second
+ * of GPU on a box that has a stream to decode. Both reasons point the same way.
+ */
+.launcher-photo[data-on='image'] {
+  filter: saturate(1.24) contrast(1.09) brightness(1.02);
+}
+
+/* A configured video sits in the same slot, so a box that refuses to autoplay
+   still shows the poster rather than black. */
+.launcher-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+}
+
+.launcher-bg[data-photo='true']::after {
+  /*
+   * A photo carries its own depth, so this only has to keep the two bars
+   * legible - and it is deliberately light through the middle, because the
+   * heavy foot an earlier version used was flattening the water the picture
+   * is mostly made of. The tile band does the work down there instead.
+   */
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    rgba(0, 0, 0, 0.3) 0%,
+    rgba(0, 0, 0, 0) 22%,
+    rgba(0, 0, 0, 0) 62%,
+    rgba(2, 14, 28, 0.34) 100%
+  );
+  z-index: 1;
+}
+
+/* ----------------------------------------------------------- status bar */
+
+.launcher-bar {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: clamp(1rem, 4vw, 4rem);
+  justify-content: space-between;
+  padding: 0 var(--safe-x);
+  height: clamp(2.8rem, 6.5vh, 5rem);
+  /*
+   * Neutral grey and mostly transparent, so the picture reads through it.
+   * Darkest at the ends where the text sits, opening up across the middle.
+   * A coloured bar competes with whatever photo the property uploads; a grey
+   * one works over all of them, which is the whole point of a launcher that
+   * anyone can re-skin from the console.
+   */
+  background: linear-gradient(
+    100deg,
+    rgba(10, 11, 13, 0.66) 0%,
+    rgba(24, 26, 30, 0.44) 26%,
+    rgba(42, 45, 50, 0.32) 52%,
+    rgba(24, 26, 30, 0.44) 78%,
+    rgba(10, 11, 13, 0.66) 100%
+  );
+  backdrop-filter: blur(5px);
+  color: #fff;
+}
+
+/* The edge that makes the banner sit on the picture instead of in it. A
+   hairline of plain light, not a colour - the bar itself is neutral now. */
+.launcher-bar::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.16) 18%,
+    rgba(255, 255, 255, 0.3) 50%,
+    rgba(255, 255, 255, 0.16) 82%,
+    rgba(255, 255, 255, 0) 100%
+  );
+}
+
+.lb-welcome {
+  font-size: clamp(1.1rem, 1.7vw, 1.9rem);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.lb-room,
+.lb-clock,
+.lb-right {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.lb-room-label {
+  font-size: clamp(0.95rem, 1.4vw, 1.5rem);
+  opacity: 0.92;
+}
+
+.lb-room-value {
+  font-size: clamp(0.85rem, 1.15vw, 1.25rem);
+  font-weight: 600;
+}
+
+.lb-clock {
+  align-items: center;
+}
+
+.lb-time {
+  font-size: clamp(1.2rem, 1.9vw, 2.1rem);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+/* Date and weekday stack beside the clock, split by a hairline like the
+   reference layout. */
+.lb-date {
+  display: flex;
+  flex-direction: column;
+  font-size: clamp(0.62rem, 0.8vw, 0.9rem);
+  line-height: 1.35;
+  opacity: 0.88;
+  padding-left: 0.6rem;
+  border-left: 1px solid rgba(255, 255, 255, 0.35);
+}
+
+.lb-right {
+  align-items: center;
+  gap: 0.9rem;
+  font-size: clamp(0.8rem, 1.05vw, 1.1rem);
+}
+
+.lb-weather {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 1.2em;
+}
+
+.lb-wx-icon {
+  font-size: 1.15rem;
+  line-height: 1;
+}
+
+.launcher .spacer {
+  flex: 1;
+}
+
+/* --------------------------------------------------------------- tiles */
+
+/*
+ * The band the tiles sit in.
+ *
+ * It does two jobs: it groups the four destinations into one object instead of
+ * four things floating on a photo, and it is what makes their labels readable
+ * over whatever the property uploaded. Edge to edge, fading out at both ends
+ * so it belongs to the picture rather than covering it.
+ */
+.tile-band {
+  position: relative;
+  z-index: 1;
+  margin-bottom: clamp(1.5rem, 7vh, 5rem);
+  padding: clamp(0.8rem, 1.8vh, 1.8rem) 0;
+  overflow: hidden;
+  background: linear-gradient(
+    90deg,
+    rgba(12, 13, 16, 0.52) 0%,
+    rgba(20, 22, 26, 0.54) 14%,
+    rgba(40, 43, 48, 0.46) 50%,
+    rgba(20, 22, 26, 0.54) 86%,
+    rgba(12, 13, 16, 0.52) 100%
+  );
+  backdrop-filter: blur(4px);
+}
+
+.tile-band::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.14) 24%,
+    rgba(255, 255, 255, 0.28) 50%,
+    rgba(255, 255, 255, 0.14) 76%,
+    rgba(255, 255, 255, 0) 100%
+  );
+}
+
+.tiles {
+  position: relative;
+  z-index: 1;
+  /* Auto columns rather than a hard-coded four, so the row still divides
+     evenly if a property ever gets a fifth destination. */
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  align-items: end;
+  padding: 0 clamp(1rem, 3.5vw, 5rem);
+}
+
+.tile-slot {
+  display: flex;
+  justify-content: center;
+}
+
+.tile {
+  background: transparent;
+  border: 2px solid transparent;
+  border-radius: clamp(0.6rem, 0.9vw, 1.1rem);
+  color: #fff;
+  font-family: inherit;
+  cursor: pointer;
+  padding: clamp(0.8rem, 1.4vw, 1.6rem) clamp(1rem, 1.8vw, 2rem);
+  width: 100%;
+  max-width: clamp(8rem, 15vw, 18rem);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(0.5rem, 0.9vw, 1rem);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.55);
+}
+
+.tile-icon {
+  display: block;
+  width: clamp(3rem, 5.6vw, 6.2rem);
+  height: clamp(3rem, 5.6vw, 6.2rem);
+}
+
+.tile-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.tile-label {
+  font-size: clamp(1rem, 1.85vw, 2.1rem);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Focus is a filled panel and a small lift rather than the global scale-up:
+   the tiles are large enough that growing one reads as clumsy. */
+.tile.focusable {
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.2s cubic-bezier(0.2, 0.8, 0.3, 1.3);
+}
+
+.tile.focusable:focus {
+  background: linear-gradient(160deg, rgba(74, 156, 224, 0.93), rgba(34, 100, 176, 0.93));
+  border-color: rgba(205, 233, 255, 0.95);
+  box-shadow:
+    0 12px 30px rgba(0, 0, 0, 0.45),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+  text-shadow: none;
+  transform: translateY(-0.5rem);
+}
+
+.tile-icon {
+  transition: transform 0.24s cubic-bezier(0.2, 0.8, 0.3, 1.35);
+}
+
+.tile.focusable:focus .tile-icon {
+  transform: translateY(-2px) scale(1.07);
+}
+
+/* ---------------------------------------------------------- animation */
+
+/*
+ * Motion on the launcher is deliberately small and slow.
+ *
+ * This screen is on for hours in a room somebody is living in, so anything
+ * that loops has to be ignorable - the picture drifts, the band catches a
+ * highlight now and then, and that is the whole budget. Everything animated
+ * here moves `transform` or `opacity` only, which the compositor handles
+ * without repainting, because the hardware this runs on is a 1 GB Android box
+ * and not a phone.
+ */
+
+.band-sheen {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* The band's lower edge. Paired with ::before above it, the two hairlines are
+   what turn a tint into a bar the four tiles sit inside. */
+.band-sheen::before {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.1) 26%,
+    rgba(255, 255, 255, 0.2) 50%,
+    rgba(255, 255, 255, 0.1) 74%,
+    rgba(255, 255, 255, 0) 100%
+  );
+}
+
+.band-sheen::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 42%;
+  background: linear-gradient(
+    100deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.1) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  transform: translate3d(-140%, 0, 0);
+}
+
+/*
+ * Deliberately tiny.
+ *
+ * A bigger drift looks better on paper and worse on the wall: the source photo
+ * is usually smaller than the panel already, so every extra percent of scale is
+ * another percent of upscaling on top of that. This starts at native size and
+ * barely moves - enough that the screen is not frozen, not enough to cost
+ * sharpness.
+ */
+@keyframes ken-burns {
+  from {
+    transform: scale(1) translate3d(0, 0, 0);
+  }
+  to {
+    transform: scale(1.04) translate3d(-0.5%, -0.4%, 0);
+  }
+}
+
+@keyframes bar-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -100%, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes band-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 1.6rem, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes tile-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 1.4rem, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes band-sweep {
+  0%,
+  62% {
+    transform: translate3d(-140%, 0, 0);
+  }
+  100% {
+    transform: translate3d(340%, 0, 0);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* A slow drift across the still. Long enough that a guest never catches it
+     starting, and it alternates so there is no jump back to the first frame. */
+  .launcher-photo[data-on='image'] {
+    animation: ken-burns 48s ease-in-out infinite alternate;
+    will-change: transform;
+  }
+
+  .launcher-bar {
+    animation: bar-in 0.5s cubic-bezier(0.2, 0.8, 0.3, 1) both;
+  }
+
+  .tile-band {
+    animation: band-in 0.5s cubic-bezier(0.2, 0.8, 0.3, 1) both 0.08s;
+  }
+
+  /* Each slot carries its own delay, so the four arrive left to right - the
+     same order the remote walks them in. */
+  .tile-slot {
+    animation: tile-in 0.42s cubic-bezier(0.2, 0.75, 0.3, 1) both;
+    animation-delay: calc(220ms + var(--i, 0) * 70ms);
+  }
+
+  .lb-clock,
+  .lb-right {
+    animation: fade-in 0.7s ease-out both 0.35s;
+  }
+
+  .band-sheen::after {
+    animation: band-sweep 11s ease-in-out infinite 2.5s;
+  }
+}
+
+/* ------------------------------------------------------- section header */
+
+.back-btn {
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--text);
+  width: 2.1rem;
+  height: 2.1rem;
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+  flex: none;
+}
+
+.section-title {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+/* --------------------------------------------------------------- about */
+
+.about {
+  padding: var(--safe-y) var(--safe-x);
+  max-width: 40rem;
+}
+
+.about-logo {
+  display: block;
+  max-width: min(60%, 22rem);
+  max-height: 6rem;
+  object-fit: contain;
+  margin: 0 0 1rem;
+}
+
+.about-name {
+  margin: 0 0 1.25rem;
+  font-size: clamp(1.4rem, 2.2vw, 2rem);
+}
+
+.about-rows {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.55rem 1.5rem;
+  margin: 0 0 1.5rem;
+}
+
+.about-rows dt {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.about-rows dd {
+  margin: 0;
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.about-support {
+  margin: 0 0 1.5rem;
+}
+
+@media (max-width: 900px) {
+  .launcher-bar {
+    height: auto;
+    flex-wrap: wrap;
+    gap: 0.5rem 1.25rem;
+    padding-top: 0.6rem;
+    padding-bottom: 0.6rem;
+  }
+  .lb-clock,
+  .lb-right {
+    margin-left: 0;
+  }
+  .tiles {
+    flex-wrap: wrap;
+    gap: 1rem;
+  }
+  .tile {
+    min-width: 6.5rem;
+    padding: 0.8rem 1rem;
+  }
+}
+
+/* ------------------------------------------------- remote habits, restricted */
+
+/*
+ * The channel number, where a television puts it.
+ *
+ * Top right, large, and above everything including the curtain - a guest
+ * typing 1-0-2 has to see the digits land even while the previous channel is
+ * still on screen or the next one is still opening. It never takes focus and
+ * never blocks a press; it is a read-out, not a dialogue.
+ */
+.zap-number {
+  position: absolute;
+  top: var(--safe-y);
+  right: var(--safe-x);
+  z-index: 12;
+  padding: 0.5rem 1.4rem;
+  border-radius: var(--radius);
+  background: rgba(8, 12, 20, 0.82);
+  border: 1px solid var(--line);
+  font-size: 2.6rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  line-height: 1.1;
+  opacity: 0;
+  transform: translateY(-0.4rem);
+  transition: opacity 0.18s var(--ease), transform 0.18s var(--ease);
+  pointer-events: none;
+}
+
+.zap-number[data-on='true'] {
+  opacity: 1;
+  transform: none;
+}
+
+/* A number that matched nothing is a message, not a number. */
+.zap-number[data-pending='false'] {
+  font-size: 1.2rem;
+  letter-spacing: normal;
+  color: var(--muted);
+}
+
+.pill.num {
+  font-variant-numeric: tabular-nums;
+}
+
+.pill.adult {
+  color: #ffd0d8;
+  border-color: rgba(255, 45, 85, 0.5);
+  background: rgba(255, 45, 85, 0.18);
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+
+/* Says what the remote can do without adding another thing to focus. */
+.hint-keys {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin-left: 0.5rem;
+}
+
+/* The number in the channel list, because it is what a guest types. */
+.zap-num {
+  flex: none;
+  width: 2.6rem;
+  text-align: right;
+  color: var(--muted);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.zap-row.active .zap-num {
+  color: var(--accent);
+}
+
+/* ------------------------------------------------------------------- PIN */
+
+.pin-sheet {
+  text-align: center;
+  min-width: min(22rem, 86vw);
+}
+
+.pin-msg {
+  margin: 0 0 1rem;
+  min-height: 1.4em;
+}
+
+.pin-dots {
+  display: flex;
+  gap: 0.7rem;
+  justify-content: center;
+  margin-bottom: 1.4rem;
+}
+
+.pin-dots i {
+  width: 0.85rem;
+  height: 0.85rem;
+  border-radius: 999px;
+  border: 2px solid var(--line);
+}
+
+.pin-dots i.on {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+/*
+ * A keypad, not a text field: the box has no keyboard, so every digit has to
+ * be somewhere the D-pad can reach. Three across is what makes up/down/left/
+ * right land where a hand expects after fifty years of telephones.
+ */
+.pin-pad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.6rem;
+}
+
+.pin-key {
+  padding: 0.75rem 0;
+  font-size: 1.2rem;
+  font-weight: 700;
+  justify-content: center;
+}
+
+.pin-key.ok {
+  font-size: 1rem;
+}
+
+/* ------------------------------------------------------- restricted section */
+
+.adult-bar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0.9rem var(--safe-x);
+}
+
+/*
+ * A different ground, so nobody is ever unsure which section they are in -
+ * the one place in this app where a guest glancing up from their phone should
+ * be able to tell at once.
+ */
+.screen.adult {
+  background:
+    radial-gradient(90rem 40rem at 50% -12%, rgba(255, 45, 85, 0.14), transparent 60%),
+    var(--bg);
+}
+
+/*
+ * Scenery behind a full-screen list, and behind a film's details.
+ *
+ * Both are the same trick and it is worth stating once. A full-screen
+ * `filter: blur()` is charged per painted pixel, and on a 4K panel driven by a
+ * box with a stream to decode that is a bill nobody wants. So the layer is
+ * rasterised at a quarter of the screen in each direction - a sixteenth of the
+ * pixels - and then scaled back up, which is free. The radius is written in
+ * pre-scale pixels, so `blur(7px)` lands as 28 on screen.
+ *
+ * The darkening lives in the same `filter` on purpose. A scrim inside a
+ * filtered element is dragged through the same correction (the launcher photo
+ * learned this the hard way), and a gradient that has been blurred is still
+ * the same gradient - so the scrim sits on the screen instead, outside it.
+ */
+.screen-photo,
+.detail-backdrop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 25%;
+  height: 25%;
+  transform: scale(4);
+  transform-origin: 0 0;
+  z-index: 0;
+  background-size: cover;
+  background-position: center;
+  pointer-events: none;
+}
+
+.screen-photo {
+  background-image: var(--bg-photo);
+  filter: blur(7px) brightness(0.5) saturate(1.2);
+}
+
+.detail-backdrop {
+  background-image: var(--art);
+  background-position: 50% 20%;
+  filter: blur(9px) brightness(0.42) saturate(1.05);
+  opacity: 0;
+  transition: opacity 0.6s var(--ease);
+}
+
+.detail-backdrop[data-on] {
+  opacity: 1;
+}
+
+/* The scrim: enough contrast under poster titles and body text that neither
+   depends on what the photograph happens to be doing at that point. */
+.screen.vod::before,
+.screen.detail-screen::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    rgba(5, 7, 13, 0.42) 0%,
+    rgba(5, 7, 13, 0.62) 45%,
+    rgba(5, 7, 13, 0.86) 100%
+  );
+}
+
+/* A film's own artwork is worth more of the frame, so the scrim leans to the
+   left where the text is and lets the right-hand side stay picture. */
+.screen.detail-screen::before {
+  background:
+    linear-gradient(90deg, rgba(5, 7, 13, 0.93) 0%, rgba(5, 7, 13, 0.72) 48%, rgba(5, 7, 13, 0.32) 100%),
+    linear-gradient(180deg, rgba(5, 7, 13, 0.38) 0%, rgba(5, 7, 13, 0.18) 35%, rgba(5, 7, 13, 0.78) 100%);
+}
+
+/* Out-of-flow scenery would otherwise paint over the screen it dresses. */
+.screen.vod > .topbar,
+.screen.vod > .body,
+.screen.detail-screen > .body {
+  position: relative;
+  z-index: 1;
+}
+
+/*
+ * The live picture behind the hero.
+ *
+ * It sits under `.hero::after`, which is the gradient that keeps the channel
+ * name readable whatever the broadcast is doing - and a broadcast does
+ * everything, including cutting to white. It fades in when it actually has a
+ * picture rather than when it was asked for, so a channel that never opens
+ * leaves the panel exactly as it was.
+ */
+.hero-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 0.7s var(--ease);
+  pointer-events: none;
+}
+
+.hero-video[data-on] {
+  opacity: 1;
+}
+
+/* A still filling a box - the notice on the service screen. Same job as the
+   video above, and it sits in the same slot, under the gradient. */
+.hero-art {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.hero.notice {
+  min-height: auto;
+}
+
+/* The notice reads across the box rather than only from the left, so its
+   gradient is gentler on the right than the live hero's. */
+.hero.notice::after {
+  background: linear-gradient(90deg, rgba(5, 7, 13, 0.9) 0%, rgba(5, 7, 13, 0.62) 60%, rgba(5, 7, 13, 0.4) 100%);
+}
+
+/* The two screens that gained a picture of their own. Live keeps a heavier
+   scrim: channel cards are bright, closely spaced and carry small type. */
+.screen.live::before,
+.screen.service::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    rgba(5, 7, 13, 0.46) 0%,
+    rgba(5, 7, 13, 0.66) 45%,
+    rgba(5, 7, 13, 0.88) 100%
+  );
+}
+
+.screen.live > .topbar,
+.screen.live > .body,
+.screen.service > .topbar,
+.screen.service > .body,
+.screen.service > .cartbar {
+  position: relative;
+  z-index: 1;
+}
+
+/* ---------------------------------------------------------------- 付款
+
+   电视上的付款界面。两个约束和别处都不一样：
+
+   - 二维码是给人**隔着两三米用手机扫**的，所以它必须够大、够白、周围留白，
+     不能跟界面一样是深色的 —— 深色底上的码，手机在昏暗房间里对不上焦。
+   - 金额要一眼看清。客人确认的是数字，不是文案。                            */
+
+.pay-sheet {
+  text-align: center;
+  min-width: min(30rem, 86vw);
+}
+
+.pay-subject {
+  margin: 0 0 0.35rem;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.pay-amount {
+  font-size: 2.1rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  margin-bottom: 1.1rem;
+}
+
+/* 白底 + 留白，不跟着主题走 —— 这一块存在的唯一目的是被摄像头认出来。 */
+.pay-qr {
+  width: 15rem;
+  height: 15rem;
+  margin: 0 auto 1rem;
+  background: #fff;
+  border-radius: var(--radius-md, 0.6rem);
+  padding: 0.7rem;
+  display: grid;
+  place-items: center;
+}
+
+.pay-qr svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.pay-qr p {
+  font-size: 0.8rem;
+  color: #333;
+  word-break: break-all;
+  padding: 0 0.4rem;
+}
+
+.pay-status {
+  margin: 0 0 0.3rem;
+  font-size: 0.95rem;
+}
+
+.pay-expiry {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.pay-clock {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 到账。绿色只是辅助 —— 文字本身已经写着「支付成功」，
+   房间里有色觉障碍的客人不会因此看不懂。 */
+.pay-sheet.paid .pay-amount,
+.pay-sheet.paid .pay-status {
+  color: var(--ok, #3fb950);
+}
+
+.pay-sheet.paid .pay-qr {
+  opacity: 0.25;
+}
+
+.pay-plans {
+  display: grid;
+  gap: 0.6rem;
+  margin-top: 1.2rem;
+}
+
+.pay-plan {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1.4rem;
+  text-align: left;
+}
+
+.pay-plan-price {
+  font-weight: 700;
+  font-size: 1.1rem;
+}
+
+/* ---------------------------------------------------------- 切台与诊断
+
+   两样东西，都是「让电视看起来像电视」而不是像网页：
+   换台时盖一层黑，省掉上一个台最后一帧僵在屏幕上的那一秒；
+   以及一块给上门排查的人看的数字。                                     */
+
+.zap-blackout {
+  position: absolute;
+  inset: 0;
+  background: #000;
+  opacity: 0;
+  pointer-events: none;
+  /* 盖上去要快（切台的瞬间），揭开可以慢一点（画面已经在了，淡出更顺眼）。*/
+  transition: opacity 0.28s ease;
+  z-index: 2;
+}
+
+.zap-blackout[data-on='true'] {
+  opacity: 1;
+  transition-duration: 0.06s;
+}
+
+/* 等宽、右上角、带阴影 —— 压在任何画面上都读得出来。 */
+.diag {
+  position: absolute;
+  /* 往下让开频道台标：直播画面右上角常年压着一个台标，
+     叠在上面两边都读不清。 */
+  top: 4.2rem;
+  right: 1.1rem;
+  z-index: 6;
+  display: none;
+  gap: 0.15rem;
+  flex-direction: column;
+  text-align: right;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: #fff;
+  pointer-events: none;
+  font-variant-numeric: tabular-nums;
+  /* 自带底色。纯文字加阴影在亮画面上仍然糊 —— 而它要读的恰恰是
+     画面出问题的时候，那时候什么底色都可能。 */
+  background: rgba(0, 0, 0, 0.62);
+  padding: 0.45rem 0.7rem;
+  border-radius: 0.4rem;
+}
+
+.diag[data-on='true'] { display: flex; }
+
+@media (prefers-reduced-motion: reduce) {
+  .zap-blackout { transition: none; }
+}
+
+/* ---------------------------------------------------------------- 搜索
+
+   电视上的搜索，软键盘是主角：客人全部的操作都在那块格子里，所以它占左边
+   一整列、键做得大；右边是结果，打一个字母重画一次。                     */
+
+.search-body {
+  display: grid;
+  grid-template-columns: minmax(20rem, 26rem) 1fr;
+  gap: 2rem;
+  padding: 0 var(--safe-x) var(--safe-y);
+  align-items: start;
+  overflow: hidden;
+}
+
+.search-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+/* 已经打进去的字母。够大 —— 隔三米看电视的人要能确认自己按对了。 */
+.search-query {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  min-height: 3.4rem;
+  padding: 0 1rem;
+  border-radius: 0.6rem;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  font-size: 1.7rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.search-placeholder {
+  color: var(--muted);
+  font-size: 1.05rem;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
+.search-caret {
+  width: 2px;
+  height: 1.5rem;
+  background: var(--accent);
+  animation: search-blink 1.1s steps(2, start) infinite;
+}
+
+@keyframes search-blink {
+  to { opacity: 0; }
+}
+
+.search-count {
+  color: var(--muted);
+  font-size: 0.92rem;
+  min-height: 1.4rem;
+}
+
+.search-keys {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.search-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.search-key {
+  flex: 1;
+  min-width: 0;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 0.5rem;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font-family: inherit;
+  font-size: 1.15rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* 焦点换底色不换字色 —— 跟播放器按钮同一条道理，见 .player .btn:focus。 */
+.search-key:focus {
+  background: var(--accent);
+  border-color: #fff;
+  outline: none;
+}
+
+.search-key.wide {
+  aspect-ratio: auto;
+  padding: 0.7rem 0.5rem;
+  font-size: 0.95rem;
+}
+
+.search-row-actions {
+  margin-top: 0.25rem;
+}
+
+.search-hits {
+  overflow: hidden;
+}
+
+.search-results {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  max-height: 70vh;
+  overflow-y: auto;
+  scrollbar-width: none;
+  align-content: flex-start;
+}
+
+.search-results::-webkit-scrollbar {
+  display: none;
+}
+
+.search-empty {
+  padding: 2rem 0;
+  max-width: 34rem;
+}
+
+.search-empty p {
+  margin: 0 0 0.5rem;
+  font-size: 1.15rem;
+}
+
+.search-empty .muted {
+  font-size: 0.95rem;
+  line-height: 1.7;
+}
+
+@media (max-width: 900px) {
+  .search-body { grid-template-columns: 1fr; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .search-caret { animation: none; }
+}
+
+/* ---------------------------------------------- 模板 B「直播优先」 */
+
+/*
+ * 同一个播放器的第二副皮肤。
+ *
+ * 模板 A 的播放器是「从首页点进来的一个屏幕」，所以上下各一块、中间留空。
+ * 模板 B 里播放器就是电视本身，所以按电视的样子来：**信息全部收到底部，
+ * 变成一条横幅**，上方整片画面不被任何东西压住。这不是审美偏好 ——
+ * 客人在模板 B 里盯着这个画面的时间是模板 A 的几十倍，任何常驻在画面上方
+ * 的元素都会变成碍眼的东西。
+ *
+ * 只改样子，不改结构：DOM 和模板 A 完全一样，所以切台、数字输入、诊断叠层
+ * 这些逻辑一份代码两处用，改一次两边都好。
+ */
+.player[data-skin='live'] .player-overlay {
+  justify-content: flex-end;
+  background: linear-gradient(180deg, transparent 0%, transparent 48%, rgba(0, 0, 0, 0.55) 72%, rgba(0, 0, 0, 0.93) 100%);
+}
+
+.player[data-skin='live'] .player-top {
+  padding: 0.9rem var(--safe-x) 0.35rem;
+  border-top: 3px solid var(--accent);
+  background: rgba(6, 8, 14, 0.62);
+}
+
+.player[data-skin='live'] .player-bottom {
+  padding: 0.35rem var(--safe-x) 1rem;
+  background: rgba(6, 8, 14, 0.62);
+}
+
+/* 台名是这条横幅上最该先被看见的东西。 */
+.player[data-skin='live'] .now-title {
+  font-size: clamp(1.4rem, 2.4vw, 2rem);
+  letter-spacing: 0.01em;
+}
+
+/* 频道号做成播出台标的样子：方块、等宽、够大，隔着三米也读得出来。 */
+.player[data-skin='live'] .pill.num {
+  font-variant-numeric: tabular-nums;
+  font-size: 1.5rem;
+  min-width: 3.2rem;
+  text-align: center;
+}
+
+/* 模板 B 没有「上一屏」，底部那排键都是动作，字小一点让位给台名。 */
+.player[data-skin='live'] .player-bottom .btn {
+  font-size: 0.95rem;
+  padding: 0.5rem 1rem;
+}
+
+/* 菜单开着时，播放器自己的横幅让位 —— 两层都在底部，同时出现会叠成一团。 */
+.player[data-menu='open'] .player-overlay {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ---- 浮在直播画面上的菜单 ---- */
+
+/*
+ * 关键是**底下的台不停**。
+ *
+ * 在电视上，画面一黑就等于「卡住了」，而客人只是想看看有什么别的可看。
+ * 所以这一层只压暗下半屏，上半屏的画面照样在动。
+ */
+.live-menu {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  padding: 0 var(--safe-x) var(--safe-y);
+  background: linear-gradient(180deg, transparent 0%, rgba(0, 0, 0, 0.35) 35%, rgba(0, 0, 0, 0.92) 100%);
+  z-index: 3;
+}
+
+.live-menu-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+}
+
+.live-menu-kicker {
+  font-size: 0.85rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.live-menu-now {
+  font-size: 1.15rem;
+  font-weight: 600;
+}
+
+.live-menu-row {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.live-menu-item {
+  flex: 1 1 8rem;
+  max-width: 14rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  padding: 1.1rem 0.75rem;
+  border-radius: var(--radius);
+  border: 1px solid rgba(255, 255, 255, 0.34);
+  background: rgba(12, 15, 22, 0.86);
+  color: var(--text);
+  font-size: 1.05rem;
+  cursor: pointer;
+  transition: transform 0.18s var(--ease), background 0.18s var(--ease);
+}
+
+.live-menu-item svg {
+  width: 2.2rem;
+  height: 2.2rem;
+}
+
+/*
+ * 焦点只换底色，不换字色。
+ *
+ * 和播放器底部那排键同一个道理：机顶盒上字色会先翻、背景晚一两帧才重绘完，
+ * 中间那几帧是深色字压深色底 —— 连着按方向键的时候，那几帧就是客人一直
+ * 看到的样子。白字压深色，任何一帧都读得出来。
+ */
+.live-menu-item:focus,
+.live-menu-item:focus-visible {
+  outline: none;
+  background: var(--accent);
+  border-color: #fff;
+  color: #fff;
+  transform: translateY(-2px);
+}
+
+.live-menu-hint {
+  margin: 0;
+  font-size: 0.85rem;
+}

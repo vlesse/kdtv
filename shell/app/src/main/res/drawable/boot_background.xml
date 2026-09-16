@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The window Android paints before the WebView has anything to show.
+
+  This is not the boot screen - that one lives in the web app, carries the
+  property's own photo and is changed from the console without touching a box.
+  This is the fraction of a second before it, and its only job is to not be
+  black: launching into black and then into the boot screen reads as two
+  separate events, one of which looks like a fault. Matching the boot screen's
+  own fallback gradient makes it read as one.
+
+  A gradient rather than a bundled image on purpose. An image here could only
+  ever be whatever was baked into the APK, so a property that changed its
+  branding in the console would see the old one flash first - worse than a
+  neutral ground.
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <gradient
+        android:angle="270"
+        android:startColor="#0A3F68"
+        android:centerColor="#10618F"
+        android:endColor="#062F4C"
+        android:type="linear" />
+</shape>

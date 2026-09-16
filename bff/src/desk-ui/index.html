@@ -1,0 +1,804 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0d1117" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <title>KDTV 前台</title>
+    <link rel="icon" href="data:," />
+    <style>
+      /*
+       * 前台手机页。
+       *
+       * 和 /admin/ 那个后台是**同一套接口、两种身体**：后台是坐着用的，
+       * 表格宽、功能全、一屏放得下十几列；这里是站着用的 —— 前台一只手拿着
+       * 手机，另一只手在登记本上写字，所以：
+       *
+       *   - 只有两件事：房间、订单。别的（改菜单、传背景、配收款）留在后台，
+       *     那些本来就不是站在柜台前做的事。
+       *   - 按钮一律够大够分开，误触的代价是给错房间开了门。
+       *   - 退房这种不可逆的动作要再问一遍，因为手机在口袋里会自己被按。
+       *
+       * 单文件、无构建，和后台一样 —— 这是运营工具，不是产品，
+       * 加一层打包只会让「服务器上改一行看看效果」变成不可能。
+       */
+      :root {
+        --bg: #0d1117;
+        --panel: #161b22;
+        --line: #262d38;
+        --text: #e6edf3;
+        --muted: #8b949e;
+        --accent: #2f81f7;
+        --danger: #da3633;
+        --ok: #2ea043;
+        /* 刘海屏和底部手势条：内容不能压在下面。 */
+        --safe-top: env(safe-area-inset-top, 0px);
+        --safe-bottom: env(safe-area-inset-bottom, 0px);
+      }
+      * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+      html, body { margin: 0; height: 100%; }
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+          "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+        overscroll-behavior-y: contain;
+      }
+      .hidden { display: none !important; }
+      .muted { color: var(--muted); }
+      .mono { font-variant-numeric: tabular-nums; }
+
+      /* ---------- 骨架 ---------- */
+      header {
+        position: sticky; top: 0; z-index: 20;
+        padding: calc(var(--safe-top) + 12px) 16px 12px;
+        background: rgba(13, 17, 23, 0.94);
+        border-bottom: 1px solid var(--line);
+        display: flex; align-items: center; gap: 10px;
+      }
+      header h1 { margin: 0; font-size: 17px; font-weight: 600; flex: 1; }
+      main { padding: 12px 16px calc(var(--safe-bottom) + 84px); }
+
+      /* 底部标签栏：拇指够得到的地方。 */
+      nav.tabs {
+        position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+        display: flex;
+        padding-bottom: var(--safe-bottom);
+        background: rgba(13, 17, 23, 0.96);
+        border-top: 1px solid var(--line);
+      }
+      nav.tabs button {
+        flex: 1; border: 0; background: none; color: var(--muted);
+        font: inherit; font-size: 13px; padding: 10px 4px 12px;
+        display: flex; flex-direction: column; align-items: center; gap: 3px;
+      }
+      nav.tabs button[aria-selected="true"] { color: var(--accent); }
+      nav.tabs .glyph { font-size: 19px; line-height: 1; }
+
+      /* ---------- 元件 ---------- */
+      .card {
+        background: var(--panel); border: 1px solid var(--line);
+        border-radius: 12px; padding: 14px; margin-bottom: 10px;
+      }
+      /* 卡片是按钮，但要长得像卡片：占满一行、左对齐、继承字体。 */
+      button.room-card {
+        display: block; width: 100%; text-align: left;
+        font: inherit; color: inherit; cursor: pointer;
+      }
+      button.room-card:active { transform: translateY(1px); }
+      button.room-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+      .row { display: flex; align-items: center; gap: 10px; }
+      .grow { flex: 1; min-width: 0; }
+      .ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+      button.btn {
+        font: inherit; font-size: 15px; font-weight: 500;
+        border-radius: 10px; border: 1px solid var(--line);
+        background: #21262d; color: var(--text);
+        /* 44px 是拇指能可靠点中的下限，这比好看重要。 */
+        min-height: 44px; padding: 0 16px; cursor: pointer;
+      }
+      button.btn:active { transform: translateY(1px); }
+      button.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+      button.btn.danger { background: transparent; border-color: var(--danger); color: #ff7b72; }
+      button.btn.wide { width: 100%; }
+      button.btn[disabled] { opacity: 0.5; }
+
+      input, select {
+        font: inherit;
+        /* 16px 以下 iOS 会在聚焦时自动放大页面，之后再也缩不回去。 */
+        font-size: 16px;
+        width: 100%; min-height: 44px; padding: 0 12px;
+        border-radius: 10px; border: 1px solid var(--line);
+        background: #0b0f14; color: var(--text);
+      }
+      label.field { display: block; margin: 12px 0 6px; font-size: 13px; color: var(--muted); }
+
+      .pill {
+        display: inline-flex; align-items: center; gap: 5px;
+        padding: 3px 9px; border-radius: 999px;
+        font-size: 12px; border: 1px solid var(--line); color: var(--muted);
+      }
+      .pill.in { color: #7ee787; border-color: #2ea04366; background: #2ea04318; }
+      .pill.new { color: #ffdf5d; border-color: #d2992266; background: #d2992218; }
+      .pill.paid { color: #7ee787; border-color: #2ea04366; background: #2ea04318; }
+      .pill.unpaid { color: #ff7b72; border-color: #da363366; background: #da363318; }
+
+      .seg { display: flex; gap: 6px; margin-bottom: 12px; }
+      .seg button {
+        flex: 1; font: inherit; font-size: 14px; min-height: 38px;
+        border-radius: 9px; border: 1px solid var(--line);
+        background: var(--panel); color: var(--muted);
+      }
+      .seg button[aria-pressed="true"] { background: #21262d; color: var(--text); border-color: #3d444d; }
+
+      .badge {
+        min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px;
+        background: var(--danger); color: #fff; font-size: 12px;
+        display: inline-flex; align-items: center; justify-content: center;
+      }
+
+      /* ---------- 弹层 ---------- */
+      .sheet-wrap {
+        position: fixed; inset: 0; z-index: 40;
+        background: rgba(0, 0, 0, 0.6);
+        display: flex; align-items: flex-end;
+      }
+      .sheet {
+        width: 100%; background: var(--panel);
+        border-radius: 16px 16px 0 0; border-top: 1px solid var(--line);
+        padding: 18px 16px calc(var(--safe-bottom) + 18px);
+        max-height: 88vh; overflow: auto;
+      }
+      .sheet h2 { margin: 0 0 4px; font-size: 19px; }
+      .sheet .actions { display: grid; gap: 10px; margin-top: 16px; }
+
+      /* ---------- 提示条 ---------- */
+      #toast {
+        position: fixed; left: 16px; right: 16px; z-index: 60;
+        bottom: calc(var(--safe-bottom) + 76px);
+        background: #1f2630; border: 1px solid var(--line); border-radius: 10px;
+        padding: 12px 14px; text-align: center;
+        transition: opacity 0.2s; opacity: 0;
+        pointer-events: none;
+      }
+      #toast[data-show="true"] { opacity: 1; }
+      #toast.bad { border-color: var(--danger); color: #ff7b72; }
+
+      /* 接口连不上要说出来，而不是安静地显示旧数据 —— 前台会照着一份
+         五分钟前的房态去开房。 */
+      #offline {
+        margin: -4px 0 12px; padding: 10px 12px; border-radius: 10px;
+        background: #3d1d1d; border: 1px solid var(--danger); color: #ffb4ae; font-size: 14px;
+      }
+
+      /* ---------- 登录 ---------- */
+      #login { padding: calc(var(--safe-top) + 12vh) 22px 24px; max-width: 420px; margin: 0 auto; }
+      #login .logo { font-size: 26px; font-weight: 700; letter-spacing: 0.04em; }
+      #login p { color: var(--muted); margin: 6px 0 22px; }
+
+      .empty { text-align: center; color: var(--muted); padding: 40px 12px; }
+    </style>
+  </head>
+
+  <body>
+    <!-- 登录 -->
+    <section id="login">
+      <div class="logo">KDTV</div>
+      <p>前台 · 用后台给你的密码登录</p>
+      <form id="loginForm">
+        <label class="field" for="pw">密码</label>
+        <!-- type=password + autocomplete：让手机的密码管理器记住它，
+             前台换班的人不该每次都去问密码是什么。 -->
+        <input id="pw" type="password" autocomplete="current-password" enterkeyhint="go" />
+        <div style="height: 14px"></div>
+        <button class="btn primary wide" type="submit">登录</button>
+      </form>
+      <p id="loginErr" class="hidden" style="color: #ff7b72; margin-top: 14px"></p>
+
+      <div id="pickWrap" class="hidden">
+        <label class="field" for="pick">这是平台总口令，选一家酒店</label>
+        <select id="pick"></select>
+        <div style="height: 12px"></div>
+        <button class="btn wide" id="pickGo">进入</button>
+      </div>
+    </section>
+
+    <!-- 主体 -->
+    <div id="app" class="hidden">
+      <header>
+        <h1 id="propName">—</h1>
+        <button class="btn" id="refresh" style="min-height: 36px; padding: 0 12px">刷新</button>
+        <button class="btn" id="logout" style="min-height: 36px; padding: 0 12px">退出</button>
+      </header>
+
+      <main>
+        <div id="offline" class="hidden"></div>
+
+        <!-- 房间 -->
+        <section id="viewRooms">
+          <div class="seg">
+            <button data-filter="all" aria-pressed="true">全部</button>
+            <button data-filter="in" aria-pressed="false">在住</button>
+            <button data-filter="free" aria-pressed="false">空房</button>
+          </div>
+          <input id="roomSearch" placeholder="房号 / 客人姓名" enterkeyhint="search" inputmode="search" />
+          <div style="height: 12px"></div>
+          <div id="roomList"></div>
+        </section>
+
+        <!-- 订单 -->
+        <section id="viewOrders" class="hidden">
+          <div class="seg">
+            <button data-ofilter="open" aria-pressed="true">待处理</button>
+            <button data-ofilter="all" aria-pressed="false">全部</button>
+          </div>
+          <div id="orderList"></div>
+        </section>
+      </main>
+
+      <nav class="tabs">
+        <button data-tab="rooms" aria-selected="true" aria-label="房间">
+          <span class="glyph">&#128273;</span><span>房间</span>
+        </button>
+        <button data-tab="orders" aria-selected="false" aria-label="订单">
+          <span class="glyph">&#128718;</span>
+          <span>订单 <span id="pendingBadge" class="badge hidden">0</span></span>
+        </button>
+      </nav>
+    </div>
+
+    <div id="toast"></div>
+
+    <script>
+      (function () {
+        'use strict';
+
+        var KEY = 'kdtv.desk.token';
+        var PID = 'kdtv.desk.pid';
+        var token = localStorage.getItem(KEY) || '';
+        var pid = localStorage.getItem(PID) || '';
+        var scope = '';
+        var roster = { devices: [], rooms: [] };
+        var service = { orders: [], pending: 0, currency: '' };
+        var tab = 'rooms';
+        var roomFilter = 'all';
+        var orderFilter = 'open';
+        var lastPending = null;
+        var timer = 0;
+        // 上一次画出来的数据长什么样。见 load() 里为什么要留着它。
+        var lastSig = '';
+
+        function $(id) { return document.getElementById(id); }
+
+        // ------------------------------------------------------------ 接口
+
+        function api(path, opts) {
+          opts = opts || {};
+          var url = '/api/admin' + path;
+          // 平台口令登录时要指明是哪家酒店；酒店自己的口令不用，服务端认得。
+          if (scope === 'platform' && pid) {
+            url += (url.indexOf('?') < 0 ? '?' : '&') + 'property=' + encodeURIComponent(pid);
+          }
+          var headers = { Authorization: 'Bearer ' + token };
+          if (opts.body) headers['Content-Type'] = 'application/json';
+          return fetch(url, {
+            method: opts.method || 'GET',
+            headers: headers,
+            body: opts.body ? JSON.stringify(opts.body) : undefined
+          }).then(function (res) {
+            return res.json().catch(function () { return {}; }).then(function (data) {
+              if (res.status === 401) { logout(); throw new Error('登录已失效'); }
+              if (!res.ok) throw new Error(data.error || ('请求失败 ' + res.status));
+              return data;
+            });
+          });
+        }
+
+        // ------------------------------------------------------------ 小工具
+
+        function toast(msg, bad) {
+          var t = $('toast');
+          t.textContent = msg;
+          t.className = bad ? 'bad' : '';
+          t.dataset.show = 'true';
+          clearTimeout(t._h);
+          t._h = setTimeout(function () { t.dataset.show = 'false'; }, 2600);
+        }
+
+        /*
+         * last_seen 是**最后一次开机**，不是心跳 —— 盒子开机时说一次 hello，
+         * 之后就不再说话了。所以这里写「最后开机」，绝不写「在线 / 离线」：
+         * 一台开了一整周的电视会诚实地报出一周前那个开机时间，把它写成
+         * 「离线」，前台就会跑去查一个根本不存在的故障。
+         */
+        function ago(sec) {
+          if (!sec) return '从没上线';
+          var m = (Date.now() / 1000 - sec) / 60;
+          if (m < 1) return '刚刚';
+          if (m < 60) return Math.floor(m) + ' 分钟前';
+          if (m < 1440) return Math.floor(m / 60) + ' 小时前';
+          return Math.floor(m / 1440) + ' 天前';
+        }
+
+        function el(tag, attrs, children) {
+          var n = document.createElement(tag);
+          if (attrs) Object.keys(attrs).forEach(function (k) {
+            if (k === 'class') n.className = attrs[k];
+            else if (k === 'text') n.textContent = attrs[k];
+            else if (k.slice(0, 2) === 'on') n[k] = attrs[k];
+            else if (attrs[k] != null) n.setAttribute(k, attrs[k]);
+          });
+          (children || []).forEach(function (c) { if (c) n.appendChild(c); });
+          return n;
+        }
+
+        function sheet(title, sub, nodes) {
+          var body = el('div', { class: 'sheet' }, [
+            el('h2', { text: title }),
+            sub ? el('div', { class: 'muted', text: sub }) : null
+          ]);
+          var wrap = el('div', { class: 'sheet-wrap' }, [body]);
+          nodes.forEach(function (n) { if (n) body.appendChild(n); });
+          // 点遮罩关掉，这是手机上人人都会的动作。
+          wrap.onclick = function (e) { if (e.target === wrap) close(); };
+          function close() { wrap.remove(); }
+          document.body.appendChild(wrap);
+          return { close: close, body: body };
+        }
+
+        // ------------------------------------------------------------ 房间
+
+        function roomsWithBoxes() {
+          var byRoom = {};
+          roster.devices.forEach(function (d) {
+            if (!d.roomId) return;
+            (byRoom[d.roomId] = byRoom[d.roomId] || []).push(d);
+          });
+          return roster.rooms.map(function (r) {
+            return { room: r, boxes: byRoom[r.roomId] || [] };
+          });
+        }
+
+        function renderRooms() {
+          var q = ($('roomSearch').value || '').trim().toLowerCase();
+          var list = roomsWithBoxes().filter(function (x) {
+            if (roomFilter === 'in' && !x.room.checkedIn) return false;
+            if (roomFilter === 'free' && x.room.checkedIn) return false;
+            if (!q) return true;
+            return (
+              String(x.room.roomId).toLowerCase().indexOf(q) >= 0 ||
+              String(x.room.guestName || '').toLowerCase().indexOf(q) >= 0
+            );
+          });
+
+          var box = $('roomList');
+          box.replaceChildren();
+          if (!list.length) {
+            box.appendChild(el('div', {
+              class: 'empty',
+              text: roster.rooms.length ? '没有符合的房间' : '还没有房间，先在后台加房间'
+            }));
+            return;
+          }
+
+          list.forEach(function (x) {
+            var r = x.room;
+            var seen = x.boxes.length
+              ? Math.max.apply(null, x.boxes.map(function (b) { return b.lastSeen || 0; }))
+              : 0;
+            /*
+             * 卡片是 <button> 而不是带 onclick 的 <div>。
+             * 手机上两者点起来一样，但 div 不可聚焦、读屏软件不会念成「按钮」，
+             * 接了实体键盘的前台电脑上也 Tab 不到。同样的代价，不如一开始就对。
+             */
+            box.appendChild(el('button', {
+              class: 'card room-card',
+              // 读屏软件念出来的就是这一句；不给的话它只会说「按钮」。
+              'aria-label': r.roomId + ' ' + (r.checkedIn ? (r.guestName || '已入住') : '空房'),
+              onclick: function () { openRoom(x); }
+            }, [
+              el('div', { class: 'row' }, [
+                el('div', { class: 'grow' }, [
+                  el('div', { style: 'font-size:18px;font-weight:600', text: r.roomId }),
+                  el('div', {
+                    class: 'muted ellipsis',
+                    text: r.checkedIn ? (r.guestName || '已入住') : '空房'
+                  })
+                ]),
+                el('span', {
+                  class: 'pill ' + (r.checkedIn ? 'in' : ''),
+                  text: r.checkedIn ? '在住' : '空房'
+                })
+              ]),
+              el('div', {
+                class: 'muted', style: 'margin-top:8px;font-size:13px',
+                text: x.boxes.length
+                  ? (x.boxes.length + ' 台电视 · 最后开机 ' + ago(seen))
+                  : '这个房间还没有绑电视'
+              })
+            ]));
+          });
+        }
+
+        function openRoom(x) {
+          var r = x.room;
+          var nodes = [];
+          var s;
+
+          if (r.checkedIn) {
+            nodes.push(el('div', { class: 'actions' }, [
+              el('button', {
+                class: 'btn danger wide', text: '退房',
+                onclick: function () { confirmCheckout(r); }
+              })
+            ]));
+          } else {
+            var name = el('input', { placeholder: '客人姓名（可不填）', autocomplete: 'off' });
+            nodes.push(el('label', { class: 'field', text: '开房' }));
+            nodes.push(name);
+            nodes.push(el('div', { class: 'actions' }, [
+              el('button', {
+                class: 'btn primary wide', text: '确认开房',
+                onclick: function (e) {
+                  var btn = e.currentTarget;
+                  btn.disabled = true;
+                  api('/rooms/' + encodeURIComponent(r.roomId) + '/checkin', {
+                    method: 'POST', body: { guestName: name.value.trim() }
+                  }).then(function (d) {
+                    roster = { devices: d.devices, rooms: d.rooms };
+                    lastSig = JSON.stringify([roster.rooms, service.orders]);
+                    s.close(); renderRooms(); toast(r.roomId + ' 已开房');
+                  }).catch(function (err) { btn.disabled = false; toast(err.message, true); });
+                }
+              })
+            ]));
+          }
+
+          if (x.boxes.length) {
+            nodes.push(el('label', { class: 'field', text: '这个房间的电视' }));
+            x.boxes.forEach(function (b) {
+              nodes.push(el('div', { class: 'card', style: 'margin:0 0 8px' }, [
+                el('div', { class: 'ellipsis', text: b.label || b.deviceId }),
+                el('div', {
+                  class: 'muted', style: 'font-size:13px',
+                  text: '最后开机 ' + ago(b.lastSeen)
+                })
+              ]));
+            });
+          }
+
+          s = sheet(r.roomId, r.checkedIn ? (r.guestName || '已入住') : '空房', nodes);
+        }
+
+        function confirmCheckout(r) {
+          /*
+           * 退房要再问一遍。
+           *
+           * 退房会清掉客人姓名、把电视恢复成待客状态。手机在口袋里被误触一下
+           * 就把一个还住着的房间退掉，前台不会立刻发现 —— 发现的是客人，
+           * 在他打开电视的时候。
+           */
+          var s2 = sheet('确认退房？', r.roomId + (r.guestName ? ' · ' + r.guestName : ''), [
+            el('div', { class: 'actions' }, [
+              el('button', {
+                class: 'btn danger wide', text: '确认退房',
+                onclick: function (e) {
+                  e.currentTarget.disabled = true;
+                  api('/rooms/' + encodeURIComponent(r.roomId) + '/checkout', { method: 'POST' })
+                    .then(function (d) {
+                      roster = { devices: d.devices, rooms: d.rooms };
+                      lastSig = JSON.stringify([roster.rooms, service.orders]);
+                      document.querySelectorAll('.sheet-wrap').forEach(function (w) { w.remove(); });
+                      renderRooms(); toast(r.roomId + ' 已退房');
+                    })
+                    .catch(function (err) { toast(err.message, true); });
+                }
+              }),
+              el('button', { class: 'btn wide', text: '再想想', onclick: function () { s2.close(); } })
+            ])
+          ]);
+        }
+
+        // ------------------------------------------------------------ 订单
+
+        var STATUS_TEXT = {
+          new: '新单', paid: '已付款', doing: '处理中', done: '已完成', cancelled: '已取消'
+        };
+        var OPEN = ['new', 'paid', 'doing'];
+
+        function renderOrders() {
+          var list = service.orders.filter(function (o) {
+            return orderFilter === 'all' || OPEN.indexOf(o.status) >= 0;
+          });
+          var box = $('orderList');
+          box.replaceChildren();
+
+          if (!list.length) {
+            box.appendChild(el('div', {
+              class: 'empty',
+              text: orderFilter === 'open' ? '没有待处理的单子' : '还没有订单'
+            }));
+            return;
+          }
+
+          list.forEach(function (o) {
+            var paid = o.payment && o.payment.state === 'paid';
+            var lines = (o.items || []).map(function (it) {
+              return el('div', {
+                class: 'muted', style: 'font-size:14px',
+                text: '· ' + (it.name || '') + ' × ' + (it.qty || 1)
+              });
+            });
+
+            var actions = [];
+            if (o.status === 'new' || o.status === 'paid') {
+              actions.push(el('button', {
+                class: 'btn primary', text: '接单',
+                onclick: function () { setStatus(o, 'doing'); }
+              }));
+            }
+            if (OPEN.indexOf(o.status) >= 0) {
+              actions.push(el('button', {
+                class: 'btn', text: '完成', onclick: function () { setStatus(o, 'done'); }
+              }));
+              actions.push(el('button', {
+                class: 'btn danger', text: '取消', onclick: function () { confirmCancel(o); }
+              }));
+            }
+
+            box.appendChild(el('div', { class: 'card' }, [
+              el('div', { class: 'row' }, [
+                el('div', { class: 'grow' }, [
+                  el('div', {
+                    style: 'font-size:17px;font-weight:600',
+                    text: (o.roomId || '未知房间') + (o.guestName ? ' · ' + o.guestName : '')
+                  }),
+                  el('div', { class: 'muted', style: 'font-size:13px', text: ago(o.createdAt) })
+                ]),
+                el('span', {
+                  class: 'pill ' + (o.status === 'new' ? 'new' : ''),
+                  text: STATUS_TEXT[o.status] || o.status
+                })
+              ]),
+              el('div', { style: 'margin:10px 0' }, lines),
+              el('div', { class: 'row' }, [
+                el('div', {
+                  class: 'grow mono',
+                  text: o.payment ? o.payment.amountText : (String(o.total) + ' ' + (service.currency || ''))
+                }),
+                /*
+                 * 「付了没有」是前台在这张卡片上最需要的一个答案 ——
+                 * 它决定送东西过去的时候要不要顺手收钱。没有支付记录 = 线下单，
+                 * 也要说清楚，不能留白让人猜。
+                 */
+                el('span', {
+                  class: 'pill ' + (paid ? 'paid' : 'unpaid'),
+                  text: paid ? '已付款' : (o.payment ? '未付款' : '到付 / 线下')
+                })
+              ]),
+              actions.length ? el('div', { class: 'row', style: 'margin-top:12px;gap:8px' }, actions) : null
+            ]));
+          });
+        }
+
+        /*
+         * 取消要再问一遍，「完成」和「接单」不用。
+         *
+         * 这两类动作的性质不一样：接单、完成是往前走，点错了再点一下就回来了；
+         * 取消是把客人的单子作废，而且这个界面没有「撤销取消」。而它就挨着
+         * 「完成」摆着 —— 站着用拇指点，两个键之间差不了几毫米。
+         */
+        function confirmCancel(o) {
+          var s = sheet('取消这一单？', (o.roomId || '') + ' · ' + (o.payment ? o.payment.amountText : o.total), [
+            el('div', { class: 'actions' }, [
+              el('button', {
+                class: 'btn danger wide', text: '确认取消',
+                onclick: function () { s.close(); setStatus(o, 'cancelled'); }
+              }),
+              el('button', { class: 'btn wide', text: '再想想', onclick: function () { s.close(); } })
+            ])
+          ]);
+        }
+
+        function setStatus(o, status) {
+          api('/service/order/' + encodeURIComponent(o.id), {
+            method: 'POST', body: { status: status }
+          })
+            .then(function (d) {
+              service.orders = d.orders;
+              service.pending = d.pending;
+              lastPending = service.pending;
+              lastSig = JSON.stringify([roster.rooms, service.orders]);
+              paintPending();
+              renderOrders();
+              toast(STATUS_TEXT[status]);
+            })
+            .catch(function (err) { toast(err.message, true); });
+        }
+
+        function paintPending() {
+          var b = $('pendingBadge');
+          b.textContent = String(service.pending || 0);
+          b.classList.toggle('hidden', !service.pending);
+        }
+
+        // ------------------------------------------------------------ 拉数据
+
+        function load(quiet) {
+          return Promise.all([api('/rooms'), api('/service?limit=60'), api('/state')])
+            .then(function (res) {
+              roster = { devices: res[0].devices || [], rooms: res[0].rooms || [] };
+              service.orders = res[1].orders || [];
+              service.pending = res[1].pending || 0;
+              service.currency = res[1].currency || '';
+              $('propName').textContent = (res[2].property && res[2].property.name) || 'KDTV';
+              $('offline').classList.add('hidden');
+
+              /*
+               * 有新单要让人察觉到。
+               *
+               * 前台把这一页开着放在柜台上，不会一直盯着看。震一下加一条提示，
+               * 比一个安静变大的小红点管用得多。只在**变多**的时候提醒，
+               * 否则每次轮询都在响。
+               */
+              if (lastPending !== null && service.pending > lastPending) {
+                toast('来新单了：' + service.pending + ' 单待处理');
+                if (navigator.vibrate) navigator.vibrate([120, 60, 120]);
+              }
+              lastPending = service.pending;
+              paintPending();
+
+              /*
+               * 没变就不重画。
+               *
+               * 每 20 秒无条件重画一次列表，会把整片 DOM 换掉 —— 前台的拇指
+               * 正伸向「接单」的时候按钮被换成了新的一个，轻则没反应，
+               * 重则列表顺序变了、点到了另一桌的单。测的时候就撞上了这件事。
+               *
+               * 真变了当然要重画（那正是开着这一页的理由）；没变就一动不动。
+               */
+              var sig = JSON.stringify([roster.rooms, service.orders]);
+              if (sig !== lastSig) {
+                lastSig = sig;
+                renderRooms();
+                renderOrders();
+              }
+            })
+            .catch(function (err) {
+              if (String(err.message).indexOf('登录') >= 0) return;
+              // 连不上就明说。安静地显示旧房态，前台会照着它去开房。
+              var o = $('offline');
+              o.textContent = '连不上服务器（' + err.message + '）。下面是上一次拿到的数据，别照着它开房。';
+              o.classList.remove('hidden');
+              if (!quiet) toast(err.message, true);
+            });
+        }
+
+        function startPolling() {
+          clearInterval(timer);
+          timer = setInterval(function () {
+            // 页面在后台时不拉 —— 前台的手机多数时间锁着屏，
+            // 每 20 秒叫醒一次网络只会耗电。
+            if (document.visibilityState === 'visible') load(true);
+          }, 20000);
+        }
+
+        document.addEventListener('visibilitychange', function () {
+          if (document.visibilityState === 'visible' && token) load(true);
+        });
+
+        // ------------------------------------------------------------ 登录
+
+        function showApp() {
+          $('login').classList.add('hidden');
+          $('app').classList.remove('hidden');
+          load();
+          startPolling();
+        }
+
+        function logout() {
+          localStorage.removeItem(KEY);
+          localStorage.removeItem(PID);
+          token = ''; pid = ''; scope = '';
+          clearInterval(timer);
+          $('app').classList.add('hidden');
+          $('login').classList.remove('hidden');
+          $('pw').value = '';
+        }
+
+        $('loginForm').onsubmit = function (e) {
+          e.preventDefault();
+          var pw = $('pw').value.trim();
+          if (!pw) return;
+          $('loginErr').classList.add('hidden');
+          fetch('/api/admin/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token: pw })
+          })
+            .then(function (r) {
+              return r.json().then(function (d) { return { ok: r.ok, d: d }; });
+            })
+            .then(function (res) {
+              if (!res.ok) throw new Error(res.d.error || '密码不对');
+              token = pw;
+              scope = res.d.scope;
+              localStorage.setItem(KEY, token);
+              if (scope === 'property') {
+                pid = '';
+                localStorage.removeItem(PID);
+                showApp();
+                return;
+              }
+              // 平台总口令：得先说是哪一家。
+              var sel = $('pick');
+              sel.replaceChildren();
+              (res.d.properties || []).forEach(function (p) {
+                sel.appendChild(el('option', { value: p.id, text: p.name }));
+              });
+              $('pickWrap').classList.remove('hidden');
+            })
+            .catch(function (err) {
+              var box = $('loginErr');
+              box.textContent = err.message;
+              box.classList.remove('hidden');
+            });
+        };
+
+        $('pickGo').onclick = function () {
+          pid = $('pick').value;
+          localStorage.setItem(PID, pid);
+          $('pickWrap').classList.add('hidden');
+          showApp();
+        };
+
+        // ------------------------------------------------------------ 交互
+
+        document.querySelectorAll('nav.tabs button').forEach(function (b) {
+          b.onclick = function () {
+            tab = b.dataset.tab;
+            document.querySelectorAll('nav.tabs button').forEach(function (x) {
+              x.setAttribute('aria-selected', String(x === b));
+            });
+            $('viewRooms').classList.toggle('hidden', tab !== 'rooms');
+            $('viewOrders').classList.toggle('hidden', tab !== 'orders');
+            window.scrollTo(0, 0);
+          };
+        });
+
+        document.querySelectorAll('[data-filter]').forEach(function (b) {
+          b.onclick = function () {
+            roomFilter = b.dataset.filter;
+            document.querySelectorAll('[data-filter]').forEach(function (x) {
+              x.setAttribute('aria-pressed', String(x === b));
+            });
+            renderRooms();
+          };
+        });
+
+        document.querySelectorAll('[data-ofilter]').forEach(function (b) {
+          b.onclick = function () {
+            orderFilter = b.dataset.ofilter;
+            document.querySelectorAll('[data-ofilter]').forEach(function (x) {
+              x.setAttribute('aria-pressed', String(x === b));
+            });
+            renderOrders();
+          };
+        });
+
+        $('roomSearch').oninput = renderRooms;
+        $('refresh').onclick = function () { load(); };
+        $('logout').onclick = logout;
+
+        // 带着 token 回来的直接进去，前台不该每次打开都登录一遍。
+        if (token) {
+          scope = pid ? 'platform' : 'property';
+          showApp();
+        }
+      })();
+    </script>
+  </body>
+</html>

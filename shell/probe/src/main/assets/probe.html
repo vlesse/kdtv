@@ -1,0 +1,117 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>hls.js probe</title>
+<style>
+  html,body{margin:0;background:#000;height:100%}
+  video{width:100%;height:100%;object-fit:contain;background:#000}
+</style>
+<video id="v" muted playsinline></video>
+<script src="hls.min.js"></script>
+<script>
+/*
+ * 现役播放路径的对照组。
+ *
+ * 配置必须和 web/src/hls.ts 里的 live + balanced 档一致 —— 这里量的不是
+ * 「hls.js 最好能到多少」，而是「客人现在在房间里看到的就是这个速度」。
+ * 任何一处调得比线上好，这份对比就没有意义了。
+ */
+var CONFIG = {
+  enableWorker: true,
+  lowLatencyMode: false,
+  capLevelToPlayerSize: true,
+  manifestLoadingMaxRetry: 2,
+  manifestLoadingRetryDelay: 600,
+  levelLoadingMaxRetry: 4,
+  fragLoadingMaxRetry: 6,
+  manifestLoadingTimeOut: 12000,
+  levelLoadingTimeOut: 20000,
+  fragLoadingTimeOut: 30000,
+  backBufferLength: 30,
+  maxBufferLength: 12,
+  maxMaxBufferLength: 30,
+  liveSyncDurationCount: 3,
+};
+
+var video = document.getElementById('v');
+var hls = null;
+
+function teardown() {
+  try { if (hls) hls.destroy(); } catch (e) {}
+  hls = null;
+  try { video.removeAttribute('src'); video.load(); } catch (e) {}
+}
+
+/** 出画面的时刻。能用 rVFC 就用它 —— 那是真的有一帧画上去了。 */
+function onFirstFrame(cb) {
+  if (video.requestVideoFrameCallback) {
+    video.requestVideoFrameCallback(function () { cb(); });
+  } else {
+    video.addEventListener('playing', function h() {
+      video.removeEventListener('playing', h);
+      cb();
+    });
+  }
+}
+
+window.__probe = function (url, timeoutMs) {
+  teardown();
+
+  var t0 = performance.now();
+  var readyMs = -1, frameMs = -1, finished = false;
+  var lastError = '';
+
+  function report(started, stable, detail) {
+    if (finished) return;
+    finished = true;
+    clearTimeout(timer);
+    var lv = (hls && hls.levels && hls.levels[hls.currentLevel]) || null;
+    // 用 || 不是 ?? —— 单档播放列表里 level.width 就是 0，那是「没这个值」，
+    // 不是「宽度为零」。同一个坑在播放器的诊断叠层里踩过一次。
+    var w = (lv && lv.width) || video.videoWidth || 0;
+    var h = (lv && lv.height) || video.videoHeight || 0;
+    var codec = [w ? w + 'x' + h : '', (lv && lv.videoCodec) || '', (lv && lv.audioCodec) || '']
+      .filter(Boolean).join(' ');
+    teardown();
+    Bridge.done(JSON.stringify({
+      started: started, readyMs: Math.round(readyMs), frameMs: Math.round(frameMs),
+      stable: stable, detail: detail, codec: codec,
+    }));
+  }
+
+  var timer = setTimeout(function () {
+    report(false, false, readyMs >= 0 ? 'timeout-no-frame' : 'timeout');
+  }, timeoutMs);
+
+  if (!window.Hls || !Hls.isSupported()) { report(false, false, 'hls.js unsupported'); return; }
+
+  hls = new Hls(CONFIG);
+  hls.on(Hls.Events.ERROR, function (_e, d) {
+    // 非致命错误只记下来：它们常常是致命错误的真正原因，而致命那条
+    // 报的往往只是「bufferStalledError」这种看不出所以然的话。
+    lastError = (d.type || '') + '/' + (d.details || '') +
+      (d.response && d.response.code ? ' ' + d.response.code : '');
+    if (d.fatal) report(false, false, lastError);
+  });
+
+  video.addEventListener('canplay', function h() {
+    video.removeEventListener('canplay', h);
+    if (readyMs < 0) readyMs = performance.now() - t0;
+  });
+
+  onFirstFrame(function () {
+    if (finished) return;
+    frameMs = performance.now() - t0;
+    if (readyMs < 0) readyMs = frameMs;
+    // 和原生那边同一个口径：出画面 3 秒后还在走才算通。
+    var at = video.currentTime;
+    setTimeout(function () {
+      var moving = video.currentTime > at && !video.paused && !video.error;
+      report(true, moving, moving ? '' : (lastError || 'stalled-after-start'));
+    }, 3000);
+  });
+
+  hls.attachMedia(video);
+  hls.on(Hls.Events.MEDIA_ATTACHED, function () { hls.loadSource(url); });
+  video.play().catch(function () {});
+};
+</script>

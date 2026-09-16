@@ -1,0 +1,32 @@
+# 依赖和构建产物
+node_modules/
+dist/
+build/
+.gradle/
+*.apk
+*.aab
+
+# 真实配置和密钥 —— 一旦进过 git 历史就删不干净
+.env
+.env.local
+deploy/SECRETS.local.md
+*.jks
+*.keystore
+keystore.properties
+local.properties
+
+# 运行时数据：数据库和酒店上传的图片/视频
+*.db
+*.db-wal
+*.db-shm
+bff/data/
+bff/src/data/
+bff/media/
+media/
+
+# 编辑器和系统
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log

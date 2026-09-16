@@ -1,0 +1,38 @@
+# WeWatch OTT — <APP_HOST>, fronted by the host nginx at ott.example.com
+#
+# Both services bind to loopback only; nginx terminates TLS and proxies in.
+# Video never passes through here — the boxes fetch it straight from the panel.
+
+services:
+  bff:
+    build:
+      context: ./ott-frontend
+      dockerfile: deploy/Dockerfile
+    image: wewatch-bff:latest
+    container_name: wewatch-bff
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PORT: "9081"
+      HOST: "0.0.0.0"
+      DB_FILE: /data/ott.db
+    volumes:
+      - ./data/bff:/data
+    ports:
+      - "127.0.0.1:19080:9081"
+
+  collector:
+    build:
+      context: ./xui-collector
+    image: wewatch-collector:latest
+    container_name: wewatch-collector
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PORT: "9090"
+      HOST: "0.0.0.0"
+      DATA_DIR: /data
+    volumes:
+      - ./data/collector:/data
+    ports:
+      - "127.0.0.1:19090:9090"
