@@ -297,6 +297,79 @@ eq('盒子已解绑', boxB().property_id, null);
 eq('**A 完全没受影响**', settings.homeConfig(A.id).propertyName, '吴哥大酒店');
 eq('A 的盒子还在', rooms.roster(A.id).devices.length, 1);
 
+// -------------------------------------------------------- 无主的盒子
+
+section('11. 无主的盒子：在哪家的表里填房间号，就归哪家');
+
+/*
+ * 十家共用一个 APK，所以插电开机的那一刻服务端认不出这台是谁的：
+ * property_id 为空，屏幕上停在配对码那一页。把它划给某一家的动作，
+ * 界面上**只有**「房间与设备」这张表能做 —— roster 把无主的盒子也列出来
+ * 就是为了这一下。
+ *
+ * 这一节撞的是一个真出过的坑：以前填了房间号会当场「已保存」，但盒子
+ * 既没归属也没线路，房间号写进了一家 id 为 0 的、根本不存在的酒店底下
+ * （SQLite 的 NULL 经 Number() 变成 0，再被 Number.isInteger 放行）。
+ * 电视上于是永远停在配对码那一页，而后台什么都没说。
+ */
+db.prepare('UPDATE properties SET line_user = ?, line_pass = ? WHERE id = ?')
+  .run('lineA', 'passA', A.id);
+
+const mkOrphan = (id, code) =>
+  db
+    .prepare(
+      'INSERT INTO devices (device_id, code, property_id, room_id, line_user, line_pass, last_seen, created_at) VALUES (?, ?, NULL, NULL, NULL, NULL, ?, ?)',
+    )
+    .run(id, code, now(), now());
+mkOrphan('box-new', '654321');
+const boxNew = () => db.prepare("SELECT * FROM devices WHERE device_id = 'box-new'").get();
+
+eq('酒店管理员碰不到无主的盒子', rooms.saveDevice(A.id, 'box-new', { roomId: '505' }), null);
+
+const saved = rooms.saveDevice(null, 'box-new', { roomId: '505' }, { adoptInto: A.id });
+eq('控制台被告知划给了哪家', saved.adoptedInto, '吴哥大酒店');
+eq('盒子归了 A', boxNew().property_id, A.id);
+eq('房间号写下来了', boxNew().room_id, '505');
+eq('**同时拿到了 A 的线路**', boxNew().line_user, 'lineA');
+eq('配对码作废', boxNew().code, null);
+ok(
+  '505 这个房间建在 A 底下',
+  Boolean(db.prepare('SELECT 1 FROM rooms WHERE property_id = ? AND room_id = ?').get(A.id, '505')),
+);
+eq(
+  '**没有挂在不存在的酒店底下的房间**',
+  db
+    .prepare('SELECT COUNT(*) n FROM rooms WHERE property_id NOT IN (SELECT id FROM properties)')
+    .get().n,
+  0,
+);
+
+// 没说是哪一家就不能猜。宁可报错，也不要再写进一家不存在的店。
+mkOrphan('box-new2', '654322');
+let threwOrphan = null;
+try {
+  rooms.saveDevice(null, 'box-new2', { roomId: '506' });
+} catch (e) {
+  threwOrphan = e.message;
+}
+ok('没指明哪家时报错，而不是默默存下', threwOrphan !== null, '居然没报错');
+eq(
+  '报错之后房间也没被建出来',
+  db.prepare("SELECT COUNT(*) n FROM rooms WHERE room_id = '506'").get().n,
+  0,
+);
+
+// 一家还没配线路时，只认领、不要把配对码也抹掉 ——
+// 否则电视上会变成既没有码也没有内容的 '------'。
+const C = props.create({ slug: 'noline', name: '还没配线路的店' });
+mkOrphan('box-new3', '654323');
+const savedC = rooms.saveDevice(null, 'box-new3', { roomId: '507' }, { adoptInto: C.id });
+const boxNew3 = () => db.prepare("SELECT * FROM devices WHERE device_id = 'box-new3'").get();
+eq('没线路的店照样认领得了', boxNew3().property_id, C.id);
+eq('但配对码留着', boxNew3().code, '654323');
+eq('也没写下半截线路', boxNew3().line_user, null);
+ok('认领仍然要说出来', savedC.adoptedInto === '还没配线路的店');
+
 // ---------------------------------------------------------------- 结果
 
 console.log(`\n${'─'.repeat(52)}`);

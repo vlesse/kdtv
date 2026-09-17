@@ -1795,7 +1795,7 @@
           save.disabled = true;
           try {
             const roomId = room.value.trim();
-            await apiRoster('/devices/' + encodeURIComponent(d.deviceId), {
+            const r = await apiRoster('/devices/' + encodeURIComponent(d.deviceId), {
               method: 'POST',
               body: JSON.stringify({ roomId, label: label.value.trim() }),
             });
@@ -1806,7 +1806,14 @@
                 { method: 'POST', body: JSON.stringify({ guestName: name }) },
               );
             }
-            toast('已保存');
+            /* 认领是这张表上唯一一个「保存」会顺带干的大事：一台无主的盒子
+               就此归了这家、拿到线路、配对码作废。不说出来的话，操作的人
+               只会看到一句「已保存」，不知道现在该回电视上按刷新。 */
+            toast(
+              r.adoptedInto
+                ? '已保存 —— 这台盒子划给了「' + r.adoptedInto + '」，回电视上按一下刷新'
+                : '已保存',
+            );
           } catch (e) {
             toast(e.message, true);
           } finally {

@@ -25,12 +25,26 @@
  */
 import { db, now } from './db.js';
 import * as adult from './adult.js';
+import * as properties from './properties.js';
 
 /** Trim, cap, and turn empty into null - the shape every text field wants. */
 const text = (v, max = 80) => {
   const s = String(v ?? '').trim().slice(0, max);
   return s || null;
 };
+
+/**
+ * 这台盒子现在归哪家，没归就是 null。
+ *
+ * 看着多余，其实是一个踩过的坑：SQLite 给回来的是整数或者 null，而
+ * `Number(null)` 是 **0**，`Number.isInteger(0)` 又是 true —— 于是「还没分给
+ * 任何酒店」会被当成「归 id 为 0 的那家酒店」一路放行，房间号写进一家不存在
+ * 的店底下，后台还回一句「已保存」。所以这里绝不能用 Number() 兜。
+ */
+function ownerOf(deviceId) {
+  return db.prepare('SELECT property_id FROM devices WHERE device_id = ?').get(deviceId)
+    ?.property_id ?? null;
+}
 
 const getRoom = db.prepare('SELECT * FROM rooms WHERE property_id = ? AND room_id = ?');
 
@@ -139,8 +153,15 @@ export function roster(pid = null, { includeUnassigned = false } = {}) {
  * room number without clearing a label. A line is user *and* password or
  * neither: half a credential authenticates against nothing, and storing it
  * would leave a box that looks configured and plays nothing.
+ *
+ * `adoptInto` 是平台管理员当前正在管的那一家。给一台还没主的盒子填房间号时，
+ * 它同时就是「把这台划给这家」—— 见下面那段注释。酒店管理员用不到（他们的
+ * `pid` 已经把范围锁死了），传了也不会生效。
+ *
+ * 返回 `{ device, adoptedInto }`，不是光一行设备：调用方要知道这一次有没有
+ * 顺带认领，好把话说清楚。
  */
-export function saveDevice(pid, deviceId, patch) {
+export function saveDevice(pid, deviceId, patch, { adoptInto = null } = {}) {
   const dev = db
     .prepare(
       pid == null
@@ -157,16 +178,37 @@ export function saveDevice(pid, deviceId, patch) {
       .run(target, dev.device_id);
   }
 
+  /*
+   * 平台管理员在某一家的表里，给一台还没主的盒子填房间号 ——
+   * 这个动作本身就是「把这台划给这家」。这张表是唯一能做这件事的地方：
+   * roster 之所以把无主的盒子也一并列出来，就是为了这一下（见 roster 注释）。
+   *
+   * 线路也一起发下去，和 devices.hello() 那段一样。不发的话，刚点完保存
+   * 这一行还会写着「待配对 + 配对码」，要等盒子下次开机才变 —— 没人能从
+   * 「还没配对」里读出「成了，去电视上按一下刷新」。
+   */
+  let adopted = null;
+  if (pid == null && adoptInto != null && ownerOf(dev.device_id) == null) {
+    const line = properties.lineFor(properties.find(adoptInto));
+    if (line.username) {
+      db.prepare(
+        'UPDATE devices SET property_id = ?, line_user = ?, line_pass = ?, code = NULL WHERE device_id = ?',
+      ).run(adoptInto, line.username, line.password, dev.device_id);
+    } else {
+      /* 这家还没有线路（平台没设默认线路，这家自己也没设）。那就只认领、
+         不动配对码 —— 一台既没有码又没有线路的盒子，屏幕上会停在 '------'，
+         比继续显示配对码还难办。线路配好之后 hello() 会补上。 */
+      db.prepare('UPDATE devices SET property_id = ? WHERE device_id = ?')
+        .run(adoptInto, dev.device_id);
+    }
+    adopted = adoptInto;
+  }
+
   const sets = [];
   const args = [];
 
   if ('roomId' in patch) {
-    const owner =
-      pid ??
-      Number(
-        db.prepare('SELECT property_id FROM devices WHERE device_id = ?').get(dev.device_id)
-          ?.property_id,
-      );
+    const owner = pid ?? ownerOf(dev.device_id);
     if (!Number.isInteger(owner)) {
       throw Object.assign(new Error('这台盒子还没分给任何酒店，先分配再填房间号'), {
         statusCode: 400,
@@ -201,7 +243,11 @@ export function saveDevice(pid, deviceId, patch) {
 
   if ('adultAllowed' in patch) adult.setDeviceAllowed(dev.device_id, Boolean(patch.adultAllowed));
 
-  return db.prepare('SELECT * FROM devices WHERE device_id = ?').get(dev.device_id);
+  return {
+    device: db.prepare('SELECT * FROM devices WHERE device_id = ?').get(dev.device_id),
+    // 有值 = 这一次顺带把盒子划给了这家，控制台要说出来。
+    adoptedInto: adopted == null ? null : (properties.find(adopted)?.name ?? null),
+  };
 }
 
 /** A code nobody else holds. Mirrors devices.js so an un-paired box can pair. */

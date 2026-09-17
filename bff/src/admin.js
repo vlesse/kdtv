@@ -639,12 +639,24 @@ export function registerAdmin(app) {
     return rooms.roster(req.pid);
   });
 
-  /** Edit one box: its room, its label, the line it streams through. */
+  /**
+   * Edit one box: its room, its label, the line it streams through.
+   *
+   * `adoptInto` 给的是平台管理员正在管的那一家。控制台每个请求都带着
+   * `?property=`（见 admin-ui 的 withProperty），所以「在这家的表里给一台
+   * 无主盒子填房间号」= 把它划给这家 —— 界面上没有第二个地方能做这件事。
+   */
   app.post('/api/admin/devices/:deviceId', async (req, reply) => {
     try {
-      const dev = rooms.saveDevice(req.pid, req.params.deviceId, req.body ?? {});
-      if (!dev) return reply.code(404).send({ error: '设备不存在' });
-      return { ok: true, ...rooms.roster(viewPid(req), { includeUnassigned: req.isPlatform }) };
+      const saved = rooms.saveDevice(req.pid, req.params.deviceId, req.body ?? {}, {
+        adoptInto: viewPid(req),
+      });
+      if (!saved) return reply.code(404).send({ error: '设备不存在' });
+      return {
+        ok: true,
+        adoptedInto: saved.adoptedInto,
+        ...rooms.roster(viewPid(req), { includeUnassigned: req.isPlatform }),
+      };
     } catch (err) {
       return reply.code(err.statusCode ?? 500).send({ error: err.message });
     }
