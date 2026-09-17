@@ -9,7 +9,8 @@ build/
 # 真实配置和密钥 —— 一旦进过 git 历史就删不干净
 .env
 .env.local
-deploy/SECRETS.local.md
+# 任何 *.local.md 都是本机私有的（真实地址、口令、测试环境说明），永远不进 git
+*.local.md
 *.jks
 *.keystore
 keystore.properties
