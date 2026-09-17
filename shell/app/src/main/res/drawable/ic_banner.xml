@@ -1,8 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+
+    Android TV 首页那一行显示的就是这张图（320x180）。
+
+    用字不用图标：这一行的图块实际只有屏幕的十几分之一，三米外看，
+    符号是一团糊，字还能读。浅底也是故意的 —— 电视首页背景接近纯黑，
+    原先那张深色底的 banner 在里面基本看不见。
+
+    字形是 Noto Sans Bold 转的轮廓（矢量图不能画文字），
+    和电视界面自己用的是同一套字。改字请重跑 scripts/brand.py。
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="320dp" android:height="180dp"
-    android:viewportWidth="320" android:viewportHeight="180">
-    <path android:fillColor="#05070D" android:pathData="M0,0h320v180h-320z" />
-    <path android:fillColor="#FF2D55"
-        android:pathData="M118,66h84a8,8 0,0 1,8 8v32a8,8 0,0 1,-8 8h-84a8,8 0,0 1,-8 -8v-32a8,8 0,0 1,8 -8z" />
-    <path android:fillColor="#FFFFFF" android:pathData="M150,80l22,10l-22,10z" />
+    android:width="320dp"
+    android:height="180dp"
+    android:viewportWidth="320"
+    android:viewportHeight="180">
+
+    <path
+        android:fillColor="#F2F5F9"
+        android:pathData="M0,0h320v180h-320z" />
+    <path
+        android:fillColor="#0B1220"
+        android:pathData="M108.34 108.00H95.82L82.20 86.08L77.54 89.43V108.00H66.54V56.00H77.54V79.82Q78.63 78.29 79.72 76.76Q80.81 75.23 81.91 73.70L95.96 56.00H108.20L90.06 79.01Z M160.72 81.13Q160.72 90.08 157.37 96.06Q154.02 102.03 147.90 105.01Q141.79 108.00 133.41 108.00H117.53V56.00H134.72Q146.96 56.00 153.84 62.45Q160.72 68.89 160.72 81.13ZM149.07 81.56Q149.07 73.19 145.35 69.15Q141.64 65.10 134.43 65.10H128.68V98.82H133.34Q149.07 98.82 149.07 81.56Z" />
+    <path
+        android:fillColor="#FF2D55"
+        android:pathData="M194.24 108.00H183.09V65.25H169.04V56.00H208.29V65.25H194.24Z M260.02 56.00 242.32 108.00H230.30L212.68 56.00H223.82L233.58 86.95Q233.87 87.75 234.42 89.90Q234.96 92.05 235.54 94.42Q236.13 96.78 236.35 98.39Q236.56 96.78 237.11 94.42Q237.66 92.05 238.24 89.90Q238.82 87.75 239.04 86.95L248.87 56.00Z" />
+    <path
+        android:fillColor="#FF2D55"
+        android:pathData="M0,168h320v12h-320z" />
 </vector>

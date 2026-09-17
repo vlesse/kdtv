@@ -48,8 +48,8 @@ android {
         // Android 5.0 covers essentially every set-top box still in service.
         minSdk = 21
         targetSdk = 35
-        versionCode = 5
-        versionName = "1.3.0"
+        versionCode = 6
+        versionName = "1.3.1"
 
         // The ONLY address burned into the app. Everything else - the line,
         // the room, the stream URLs - is fetched from here at boot, which is
