@@ -1524,6 +1524,31 @@
 
             acts.append(
               el('button', {
+                textContent: '改名',
+                onclick: async () => {
+                  const n = prompt(
+                    '这家酒店叫什么？\n\n' +
+                      '改完之后，电视首页显示的名字也跟着变 —— 不用再去「文字」那栏改一次。',
+                    p.name,
+                  );
+                  if (n === null || n.trim() === p.name) return;
+                  try {
+                    await api('/properties/' + p.id, {
+                      method: 'POST',
+                      body: JSON.stringify({ name: n }),
+                    });
+                    toast('已改名，电视上下次开机生效');
+                    await loadProps();
+                    await refresh();
+                  } catch (e) {
+                    toast(e.message, true);
+                  }
+                },
+              }),
+            );
+
+            acts.append(
+              el('button', {
                 textContent: p.hasLogin ? '改登录口令' : '设登录口令',
                 onclick: async () => {
                   const t = prompt(
