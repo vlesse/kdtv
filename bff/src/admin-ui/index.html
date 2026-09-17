@@ -924,7 +924,7 @@
 
       $('tvTemplate').onchange = () =>
         saveTv({ template: $('tvTemplate').value }, '模板已保存，盒子下次开机生效');
-      $('tvProfile').onchange = () >
+      $('tvProfile').onchange = () =>
         saveTv({ liveProfile: $('tvProfile').value }, '直播模式已保存，盒子下次切台生效');
       $('toggleDiag').onclick = () => {
         const on = !state?.home?.tv?.diagnostics;

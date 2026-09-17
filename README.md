@@ -64,13 +64,19 @@ cd bff && npm install && npm run dev
 # 电视界面
 cd web && npm install && npm run dev
 
-# 改完必须跑，两个都要绿
+# 改完必须跑，三个都要绿
 cd bff && node scripts/selfcheck.js      # 88 项：收款、发货、防重复发货
 cd bff && node scripts/tenancy-check.js  # 84 项：A 店看不看得见 B 店的东西
+cd bff && node scripts/ui-check.js       #  6 项：后台/前台那两个单文件页面还能不能跑
 ```
 
 第二个脚本尤其重要。多租户的错误**线上不会报错**，只会是 B 店的客人发现
 电视上显示着别人家的名字，或者一家交了钱十家一起免费。只能靠主动去撞。
+
+第三个是补一个真实的洞：`/admin/` 和 `/desk/` 是「一个 HTML 里塞一整段内联 JS」，
+没有构建步骤，**发布前没有任何东西会解析它**。写错一个字符，服务端照样 200 把
+文件发出去，浏览器解析到那行就整段放弃 —— 页面一片空白，而所有 curl 检查全绿。
+真出过一次：少一个 `=`，后台白了很久才被发现。
 
 ## 真实地址和口令
 
