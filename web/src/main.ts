@@ -579,14 +579,27 @@ function channelCard(ch: Channel, go: (ch: Channel) => void = (c) => showPlayer(
   card.addEventListener('focus', () => {
     window.clearTimeout(timer);
     timer = window.setTimeout(async () => {
-      try {
-        const r = await api.preview(ch.id);
-        // 等了一圈回来焦点早走了，就别贴上去了。
-        if (!r.url || document.activeElement !== card) return;
-        shot.src = r.url;
-        shot.onload = () => card.classList.add('has-shot');
-      } catch {
-        /* 抓不到就还是原来那张纯色卡，不用报错 */
+      /*
+       * 第一次问一个从没抓过的频道，服务端只会**开始抓**然后回个空 ——
+       * 图要两三秒后才有。只问一次的话，第一次停在这张卡上永远是空的，
+       * 得离开再回来才看得到，像坏的。所以停在这里就多问几次。
+       */
+      for (let tries = 0; tries < 4; tries++) {
+        if (document.activeElement !== card) return;
+        try {
+          const r = await api.preview(ch.id);
+          if (document.activeElement !== card) return;
+          // 整店关了，或者这是受限频道 —— 再问多少次都不会有。
+          if (r.off || r.restricted) return;
+          if (r.url) {
+            shot.onload = () => card.classList.add('has-shot');
+            shot.src = r.url;
+            return;
+          }
+        } catch {
+          return; /* 网络不行就算了，卡片还是原来那张纯色的 */
+        }
+        await new Promise((done) => window.setTimeout(done, 2500));
       }
     }, PREVIEW_DWELL_MS);
   });
