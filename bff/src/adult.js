@@ -22,6 +22,7 @@ import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { db } from './db.js';
 import { getSetting, setSetting } from './settings.js';
 import * as xui from './xui.js';
+import * as properties from './properties.js';
 
 /** An unlock lasts a viewing, not a stay. */
 const UNLOCK_TTL_MS = 30 * 60 * 1000;
@@ -302,17 +303,16 @@ export async function restrictedIds(dev) {
   const hit = idCache.get(key);
   if (hit && Date.now() - hit.at < ID_CACHE_MS) return hit;
 
-  const u = dev.line_user;
-  const p = dev.line_pass;
+  const line = properties.lineOf(dev);
   const arr = (v) => (Array.isArray(v) ? v : []);
 
   const [liveCats, live, movieCats, movies, seriesCats, series] = await Promise.all([
-    xui.liveCategories(u, p),
-    xui.liveStreams(u, p),
-    xui.vodCategories(u, p),
-    xui.vodStreams(u, p),
-    xui.seriesCategories(u, p),
-    xui.seriesList(u, p),
+    xui.liveCategories(line),
+    xui.liveStreams(line),
+    xui.vodCategories(line),
+    xui.vodStreams(line),
+    xui.seriesCategories(line),
+    xui.seriesList(line),
   ]);
 
   const flagged = (cats, kind) =>
@@ -352,7 +352,7 @@ export async function restrictedIds(dev) {
   await Promise.all(
     [...entry.series].map(async (seriesId) => {
       try {
-        const raw = await xui.seriesInfo(u, p, seriesId);
+        const raw = await xui.seriesInfo(line, seriesId);
         for (const list of Object.values(raw?.episodes ?? {})) {
           for (const e of arr(list)) entry.episode.add(Number(e.id));
         }

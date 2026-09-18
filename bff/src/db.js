@@ -227,6 +227,62 @@ const settingsRebuilt = rebuild(
  * 只在库里已经有东西、却还没有任何酒店的时候建 —— 也就是从单店版升级上来的
  * 那一次。全新安装什么都不建，第一家由操作员在后台自己填。
  */
+/* ------------------------------------------------------------------ 面板
+
+ * 一台服务器可以接好几台 XUI 面板，每家酒店各自指定用哪一台。
+ *
+ * 两个地址必须分开，它们服务的不是同一个人：
+ *   `api_base`    服务器自己拿频道列表用。可以是内网地址、可以是明文 http。
+ *   `public_base` **盒子**拿视频用。盒子在酒店里，进不了内网，
+ *                 而且页面是 https，所以这个必须是公网上能访问的地址。
+ *                 面板自己有 https 就直接填它；没有就在 nginx 里给它开一个
+ *                 反代入口（像现在的 /stream/ 那样），填那个地址。
+ */
+db.exec(`
+  CREATE TABLE IF NOT EXISTS panels (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    slug        TEXT NOT NULL UNIQUE,
+    name        TEXT NOT NULL,
+    api_base    TEXT NOT NULL,
+    public_base TEXT NOT NULL,
+    note        TEXT,
+    created_at  INTEGER NOT NULL
+  );
+`);
+
+// 留空 = 用平台默认那台（slug 为 'default' 的）。
+addColumn('properties', 'panel_id', 'INTEGER');
+
+/*
+ * 这台盒子的线路是人手指定的，开机时不要拿酒店的线路覆盖它。
+ *
+ * 不加这一列的后果实测过：后台给某一台单独换线路，看着改成了，
+ * 盒子下次开机又被 hello() 改回去 —— 而界面上写的是「盒子重启后生效」。
+ */
+addColumn('devices', 'line_pinned', 'INTEGER NOT NULL DEFAULT 0');
+
+/**
+ * 把现在配置里那台面板录成第一行。
+ *
+ * 升级上来的库本来就在用它，只是这个地址一直只存在于环境变量里。
+ * 先建这一行，所有酒店的 panel_id 留空就继续指着它，升级前后行为一致。
+ */
+function seedDefaultPanel() {
+  if (db.prepare("SELECT COUNT(*) n FROM panels WHERE slug = 'default'").get().n > 0) return;
+  db.prepare(
+    'INSERT INTO panels (slug, name, api_base, public_base, note, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+  ).run(
+    'default',
+    '默认面板',
+    process.env.XUI_BASE ?? 'http://xui-ott:80',
+    process.env.XUI_PUBLIC_BASE ?? 'http://localhost:9080',
+    '从环境变量 XUI_BASE / XUI_PUBLIC_BASE 建的。改这一行就能换掉全平台默认的面板。',
+    Math.floor(Date.now() / 1000),
+  );
+}
+
+seedDefaultPanel();
+
 function seedFirstProperty() {
   if (db.prepare('SELECT COUNT(*) n FROM properties').get().n > 0) return;
 

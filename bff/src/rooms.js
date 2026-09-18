@@ -114,7 +114,7 @@ export function roster(pid = null, { includeUnassigned = false } = {}) {
   const devices = db
     .prepare(`
       SELECT d.device_id, d.mac, d.code, d.room_id, d.line_user, d.label,
-             d.last_seen, d.created_at, d.adult_allowed, d.content_until,
+             d.last_seen, d.created_at, d.adult_allowed, d.content_until, d.line_pinned,
              d.property_id, p.name AS property_name,
              r.building, r.floor, r.guest_name, r.checked_in
         FROM devices d
@@ -134,6 +134,9 @@ export function roster(pid = null, { includeUnassigned = false } = {}) {
       roomId: d.room_id,
       label: d.label,
       line: d.line_user,
+      // 人手指定的线路（开机不会被酒店的盖掉）—— 控制台要标出来，
+      // 否则同一家里几台片单不一样，看上去像系统坏了。
+      linePinned: Boolean(d.line_pinned),
       bound: Boolean(d.line_user),
       lastSeen: d.last_seen,
       createdAt: d.created_at,
@@ -211,6 +214,8 @@ export function saveDevice(pid, deviceId, patch, { adoptInto = null } = {}) {
         .run(target, dev.device_id);
       handOverLine(dev.device_id, target);
       adult.setDeviceAllowed(dev.device_id, false);
+      // 钉住的那条线路是上一家的，跟着盒子过去没意义，还会让它一直放旧东家的片单。
+      db.prepare('UPDATE devices SET line_pinned = 0 WHERE device_id = ?').run(dev.device_id);
       moved = { propertyId: target, name: target == null ? null : (properties.find(target)?.name ?? null) };
     }
   }
@@ -256,10 +261,15 @@ export function saveDevice(pid, deviceId, patch, { adoptInto = null } = {}) {
     if (user && !pass) {
       throw Object.assign(new Error('换线路要同时填账号和密码'), { statusCode: 400 });
     }
-    // Clearing the line un-pairs the box. It needs a code to be paired again,
-    // and the old one was thrown away when it was bound.
-    sets.push('line_user = ?', 'line_pass = ?', 'code = ?');
-    args.push(user, user ? pass : null, user ? null : freshCode());
+    /*
+     * Clearing the line un-pairs the box. It needs a code to be paired again,
+     * and the old one was thrown away when it was bound.
+     *
+     * 填了就「钉住」：这是人手指定的，开机时 hello() 不要拿酒店的线路盖它
+     * （「两层楼两条线路」靠的就是这个）；清空就松开，重新跟酒店走。
+     */
+    sets.push('line_user = ?', 'line_pass = ?', 'code = ?', 'line_pinned = ?');
+    args.push(user, user ? pass : null, user ? null : freshCode(), user ? 1 : 0);
   }
 
   if (sets.length) {

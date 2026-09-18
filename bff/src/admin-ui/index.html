@@ -224,6 +224,46 @@
         </span>
       </header>
 
+      <section id="panelsSection" hidden>
+        <h2>面板</h2>
+        <p class="hint">
+          <strong>面板是一台服务器</strong>（一整套后台、片库、推流）；<strong>线路是那台面板上的一个账号</strong>，
+          决定它能看到哪些套餐、能几个房间同时看。<strong>换线路是换「看到什么」，换面板是换「从哪台机器拿」。</strong>
+        </p>
+        <p class="hint">
+          所以<strong>一条线路只在它自己那台面板上有效</strong> —— 把 A 面板的线路填给指着 B 面板的酒店，
+          认证会失败，那家的电视会全黑。改之前先用「试一下」问一句。
+        </p>
+        <div class="scroll">
+          <table class="tbl">
+            <thead>
+              <tr>
+                <th>面板</th><th>标识</th><th>接口地址</th><th>播放地址</th><th>酒店</th><th></th>
+              </tr>
+            </thead>
+            <tbody id="panelRows"></tbody>
+          </table>
+        </div>
+
+        <label style="margin-top:18px">接一台新面板</label>
+        <p class="hint">
+          <strong>两个地址不是同一个用途，别填成一样的（除非它本来就一样）：</strong><br />
+          <strong>接口地址</strong>　服务器自己拿频道列表用。可以是内网地址、可以是明文 http。<br />
+          <strong>播放地址</strong>　<strong>盒子</strong>拿视频用。盒子在酒店里，进不了内网，而且页面是 https ——
+          所以这个必须是公网上能访问的地址。面板自己有 https 就直接填它；没有就在 nginx 里给它开一个反代入口
+          （像现在的 <span class="mono">/stream/</span> 那样），填那个地址。
+        </p>
+        <div class="row">
+          <input id="newPanelName" type="text" placeholder="面板名字，如 台湾测试机" style="flex:1;min-width:150px" />
+          <input id="newPanelSlug" type="text" placeholder="标识，如 tw-test" style="width:130px" />
+        </div>
+        <div class="row" style="margin-top:8px">
+          <input id="newPanelApi" type="text" placeholder="接口地址，如 http://10.140.0.4" style="flex:1;min-width:190px" />
+          <input id="newPanelPub" type="text" placeholder="播放地址，如 https://你的域名/stream/tw" style="flex:1;min-width:190px" />
+          <button class="primary" id="addPanel">接上</button>
+        </div>
+      </section>
+
       <section id="propsSection" hidden>
         <h2>酒店</h2>
         <p class="hint">
@@ -235,7 +275,7 @@
           <table class="tbl">
             <thead>
               <tr>
-                <th>酒店</th><th>标识</th><th>线路</th><th>盒子</th>
+                <th>酒店</th><th>标识</th><th>面板</th><th>线路</th><th>盒子</th>
                 <th>在住</th><th>待处理</th><th>后台登录</th><th></th>
               </tr>
             </thead>
@@ -1477,6 +1517,7 @@
         const isPlatform = scope === 'platform';
         $('manageProps').hidden = !isPlatform;
         $('propsSection').hidden = !isPlatform;
+        $('panelsSection').hidden = !isPlatform;
         $('propPick').hidden = !isPlatform || propList.length < 2;
 
         if (isPlatform) {
@@ -1624,6 +1665,7 @@
               null,
               el('td', null, p.name),
               el('td', null, el('span', { className: 'mono', textContent: p.slug })),
+              el('td', null, panelCell(p)),
               el(
                 'td',
                 null,
@@ -1663,6 +1705,8 @@
           if (!propList.some((p) => p.id === currentProp)) currentProp = propList[0]?.id ?? null;
           renderDefaultProp(r.defaultProperty ?? null);
           applyScope();
+          await loadPanels();
+          renderProps();
         } catch (e) {
           toast(e.message, true);
         }
@@ -1715,6 +1759,191 @@
         }
       };
 
+      // ------------------------------------------------------------ 面板
+
+      const NL_ = '\u000a';
+      let panelList = [];
+
+      /* 酒店那一行的「面板」格：显示它实际走哪一台，点一下能换。
+         没指定的显示「默认 · <名字>」—— 后台要回答的是「它现在从哪台机器拿片」，
+         不是「表里这格填了没」。 */
+      function panelCell(p) {
+        const cell = el('span', {
+          className: p.panelId == null ? 'hint' : '',
+          textContent: (p.panelId == null ? '默认 · ' : '') + (p.panelName || '—'),
+        });
+        const edit = el('button', {
+          textContent: '换',
+          style: 'padding:2px 8px;font-size:12px;margin-left:6px',
+        });
+        const wrap = el('span', null, cell, edit);
+        edit.onclick = () => {
+          const pick = el(
+            'select',
+            { style: 'max-width:150px' },
+            el('option', { value: '', textContent: '跟平台默认', selected: p.panelId == null }),
+            ...panelList.map((x) =>
+              el('option', { value: String(x.id), textContent: x.name, selected: x.id === p.panelId }),
+            ),
+          );
+          const go = el('button', { className: 'primary', textContent: '确定', style: 'padding:2px 8px;font-size:12px' });
+          const cancel = el('button', { textContent: '取消', style: 'padding:2px 8px;font-size:12px' });
+          go.onclick = async () => {
+            const target = pick.value ? Number(pick.value) : null;
+            if (target === (p.panelId ?? null)) return renderProps();
+            const warn =
+              '把「' + p.name + '」换到另一台面板？' + NL_ + NL_ +
+              '这家的片单会整个换掉。' + NL_ +
+              '注意：线路只在它自己那台面板上有效 —— 如果这家绑的线路在新面板上不存在，' +
+              '它的电视会全黑。换完记得用「试一下」确认。';
+            if (!confirm(warn)) return;
+            try {
+              await api('/properties/' + p.id, {
+                method: 'POST',
+                body: JSON.stringify({ propertyId: p.id, panelId: target }),
+              });
+              toast('已换面板，盒子下次开机生效');
+              await loadProps();
+              await refresh();
+            } catch (e) {
+              toast(e.message, true);
+            }
+            renderProps();
+          };
+          cancel.onclick = renderProps;
+          wrap.replaceChildren(pick, ' ', go, ' ', cancel);
+        };
+        return wrap;
+      }
+
+      function renderPanels() {
+        const body = $('panelRows');
+        if (!body) return;
+        body.replaceChildren(
+          ...panelList.map((x) => {
+            const acts = el('div', { className: 'acts' });
+
+            /* 「试一下」回答的是上线前唯一要紧的问题：这对账号在这台机器上算数吗，
+               能看到多少东西，能几个房间同时看。填错的现象是酒店电视全黑，
+               不是后台报错 —— 所以得有个地方先问一句。 */
+            const probe = el('button', { textContent: '试一下' });
+            probe.onclick = async () => {
+              const u = prompt('用哪条线路试这台面板？（线路账号）', '');
+              if (u === null || !u.trim()) return;
+              const pw = prompt('线路密码', '');
+              if (pw === null) return;
+              probe.disabled = true;
+              probe.textContent = '正在试…';
+              try {
+                const r = await api('/panels/' + x.id + '/test', {
+                  method: 'POST',
+                  body: JSON.stringify({ lineUser: u.trim(), linePass: pw.trim() }),
+                });
+                if (!r.ok) {
+                  toast('不通：' + (r.reason || '未知原因'), true);
+                } else {
+                  /* 拿不到的别印成 0 —— 片库大的面板一份电影列表好几 MB，
+                     十几秒内取不完很正常，印「0 部电影」会让人以为面板是空的。 */
+                  const num = (v, unit) => (v == null ? '?' + unit + '（没取完）' : v + unit);
+                  const cap = r.maxConnections ? r.maxConnections + ' 个房间同时看' : '并发未知';
+                  toast(
+                    '通了 —— ' + num(r.live, ' 个直播') + ' / ' + num(r.movies, ' 部电影') +
+                      ' / ' + num(r.series, ' 部剧集') + '，最多 ' + cap,
+                  );
+                }
+              } catch (e) {
+                toast(e.message, true);
+              } finally {
+                probe.disabled = false;
+                probe.textContent = '试一下';
+              }
+            };
+            acts.append(probe);
+
+            const rename = el('button', { textContent: '改地址' });
+            rename.onclick = async () => {
+              const api_ = prompt('接口地址（服务器自己拿列表用）', x.apiBase);
+              if (api_ === null) return;
+              const pub = prompt('播放地址（盒子拿视频用，必须公网能访问）', x.publicBase);
+              if (pub === null) return;
+              try {
+                const r = await api('/panels/' + x.id, {
+                  method: 'POST',
+                  body: JSON.stringify({ apiBase: api_, publicBase: pub }),
+                });
+                panelList = r.panels;
+                toast('已改，盒子下次开机生效');
+              } catch (e) {
+                toast(e.message, true);
+              }
+              renderPanels();
+              await loadProps();
+            };
+            acts.append(rename);
+
+            const drop = el('button', { className: 'danger', textContent: '删除' });
+            drop.onclick = async () => {
+              if (!confirm('删掉面板「' + x.name + '」？')) return;
+              try {
+                const r = await api('/panels/' + x.id, { method: 'DELETE' });
+                panelList = r.panels;
+                toast('已删除');
+              } catch (e) {
+                toast(e.message, true);
+              }
+              renderPanels();
+            };
+            acts.append(drop);
+
+            return el(
+              'tr',
+              null,
+              el('td', null, x.name, x.isDefault ? el('span', { className: 'pill live', textContent: '默认', style: 'margin-left:6px' }) : null),
+              el('td', null, el('span', { className: 'mono', textContent: x.slug })),
+              el('td', null, el('span', { className: 'mono', textContent: x.apiBase })),
+              el('td', null, el('span', { className: 'mono', textContent: x.publicBase })),
+              el('td', null, String(x.properties ?? 0) + ' 家'),
+              el('td', null, acts),
+            );
+          }),
+        );
+      }
+
+      async function loadPanels() {
+        if (scope !== 'platform') return;
+        try {
+          panelList = (await api('/panels')).panels || [];
+        } catch {
+          panelList = [];
+        }
+        renderPanels();
+      }
+
+      const addPanelBtn = $('addPanel');
+      if (addPanelBtn) {
+        addPanelBtn.onclick = async () => {
+          try {
+            const r = await api('/panels', {
+              method: 'POST',
+              body: JSON.stringify({
+                name: $('newPanelName').value.trim(),
+                slug: $('newPanelSlug').value.trim().toLowerCase(),
+                apiBase: $('newPanelApi').value.trim(),
+                publicBase: $('newPanelPub').value.trim(),
+              }),
+            });
+            panelList = r.panels;
+            for (const id of ['newPanelName', 'newPanelSlug', 'newPanelApi', 'newPanelPub']) {
+              $(id).value = '';
+            }
+            renderPanels();
+            toast('已接上 —— 用「试一下」确认这台面板和线路对得上');
+          } catch (e) {
+            toast(e.message, true);
+          }
+        };
+      }
+
       // -------------------------------------------------- rooms and devices
 
       /* The building.
@@ -1758,8 +1987,18 @@
           className: d.bound ? '' : 'mono',
           textContent: d.line || '未绑定',
         });
+        /* 人手指定的线路：开机不会被酒店的盖掉。不标出来的话，同一家里几台
+           片单不一样，看上去像系统坏了。 */
+        const pinned = d.linePinned
+          ? el('span', {
+              className: 'pill',
+              textContent: '单独指定',
+              title: '这台不跟酒店的线路走，开机也不会被改回去。清空线路即可恢复。',
+              style: 'margin-left:6px',
+            })
+          : null;
         const lineEdit = el('button', { textContent: '换', style: 'padding:2px 8px;font-size:12px' });
-        lineCell.append(lineText, ' ', lineEdit);
+        lineCell.append(lineText, pinned, ' ', lineEdit);
 
         /* Changing a line is rare and consequential - it swaps the whole
            channel list for that room - so it is two deliberate fields that
@@ -1775,7 +2014,11 @@
                 method: 'POST',
                 body: JSON.stringify({ lineUser: user.value.trim(), linePass: pass.value.trim() }),
               });
-              toast(user.value.trim() ? '线路已更换，盒子重启后生效' : '已解绑，盒子重启后显示配对码');
+              toast(
+                user.value.trim()
+                  ? '已单独指定这一台的线路，开机也不会被酒店的盖掉'
+                  : '已恢复跟酒店走，盒子重启后生效',
+              );
             } catch (e) {
               toast(e.message, true);
             }

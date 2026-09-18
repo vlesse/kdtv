@@ -22,6 +22,7 @@ import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { db, now, PLATFORM } from './db.js';
 import { config } from './config.js';
 import { setSetting } from './settings.js';
+import * as panels from './panels.js';
 
 const SLUG = /^[a-z0-9][a-z0-9-]{1,30}$/;
 
@@ -55,6 +56,11 @@ export function publicProperty(p, extra = {}) {
     contact: p.contact,
     line: p.line_user || null,
     usesDefaultLine: !p.line_user,
+    // 这家走哪台面板。`panelId` 为 null = 没指定，跟平台默认那台 ——
+    // 而 `panelName` 不管指不指定都是实际在用的那一台，因为后台要回答的是
+    // 「它现在从哪台机器拿片」，不是「表里这格填了没」。
+    panelId: p.panel_id ?? null,
+    panelName: panels.forProperty(p)?.name ?? null,
     hasLogin: Boolean(p.token_hash),
     active: Boolean(p.active),
     createdAt: p.created_at,
@@ -140,6 +146,22 @@ export function save(id, patch = {}) {
     args.push(user, user ? pass : null);
   }
 
+  /*
+   * 换面板 = 换“从哪台机器拿片”。
+   *
+   * 和换线路是两回事，但两者绑在一起：一条线路只在它自己那台面板上
+   * 有效。所以换面板而不同时换线路，很可能得到一家认证不过的酒店 ——
+   * 这件事控制台必须当场说出来，不能等到客人对着黑屏才发现。
+   */
+  if ('panelId' in patch) {
+    const target = patch.panelId == null || patch.panelId === '' ? null : Number(patch.panelId);
+    if (target != null && !panels.find(target)) {
+      throw Object.assign(new Error('没有这台面板'), { statusCode: 400 });
+    }
+    sets.push('panel_id = ?');
+    args.push(target);
+  }
+
   if (sets.length) {
     db.prepare(`UPDATE properties SET ${sets.join(', ')} WHERE id = ?`).run(...args, p.id);
   }
@@ -157,6 +179,51 @@ export function lineFor(property) {
     return { username: property.line_user, password: property.line_pass };
   }
   return { username: config.defaultLine.username, password: config.defaultLine.password };
+}
+
+/**
+ * 这家酒店走哪台面板。没指定就是平台默认那台。
+ */
+export function panelFor(property) {
+  return panels.forProperty(property);
+}
+
+/**
+ * 一台盒子拿片单时要用的全部东西：账号、密码，和它在哪台面板上。
+ *
+ * `xui.js` 里每个函数收的就是这个对象。**账号密码和面板必须一起走** ——
+ * 同一对账号密码在另一台面板上要么认不过、要么是另一批内容，
+ * 分开传早晚会抄错一半。
+ *
+ * 线路用盒子自己存的那一份（hello 会把酒店的线路发给它），
+ * 面板则永远按它所属的酒店算：面板是“从哪台机器拿”，那是酒店的属性，
+ * 不是某一台盒子能自己决定的。
+ */
+export function lineOf(dev) {
+  const property = dev?.property_id != null ? find(dev.property_id) : null;
+  const panel = panels.forProperty(property);
+  return {
+    username: dev?.line_user ?? '',
+    password: dev?.line_pass ?? '',
+    api: panel?.api_base ?? '',
+    pub: String(panel?.public_base ?? '').replace(/\/+$/, ''),
+    panelId: panel?.id ?? 0,
+    panelName: panel?.name ?? '',
+  };
+}
+
+/**
+ * 这家酒店自己去问面板时用的 line 对象（后台读分类走的就是这条路）。
+ * 和盒子走的是同一台面板、同一条线路 —— 否则后台勾的分类 id
+ * 在电视上根本对不上号。
+ */
+export function callLineFor(property) {
+  const l = lineFor(property);
+  return lineOf({
+    property_id: property?.id ?? null,
+    line_user: l.username,
+    line_pass: l.password,
+  });
 }
 
 // ------------------------------------------------------------------ 登录

@@ -89,7 +89,14 @@ export function hello({ deviceId, mac, label }) {
    * 没有归属的盒子就是没有线路，屏幕上停在配对码那一页。这是对的：
    * 在十家同时跑的服务器上，一台不知道属于谁的盒子不该看到任何人的内容。
    */
-  if (dev.property_id) {
+  /*
+   * `line_pinned` = 后台给这一台单独指定过线路，开机时就不要拿酒店的盖回去。
+   *
+   * 没有这一判断的时候实测过：后台改完看着生效了，盒子下次开机又被这里改回去，
+   * 而界面上写的是「盒子重启后生效」—— 正好说反了。
+   * 后台说明里「两层楼绑两条不同线路」这个用法，靠的就是它。
+   */
+  if (dev.property_id && !dev.line_pinned) {
     const line = properties.lineFor(properties.find(dev.property_id));
     if (line.username && (dev.line_user !== line.username || dev.line_pass !== line.password)) {
       db.prepare('UPDATE devices SET line_user = ?, line_pass = ?, code = NULL WHERE device_id = ?')

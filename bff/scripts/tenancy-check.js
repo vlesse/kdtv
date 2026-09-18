@@ -26,6 +26,8 @@ const adult = await import('../src/adult.js');
 const billing = await import('../src/billing.js');
 const pay = await import('../src/pay.js');
 const svc = await import('../src/service.js');
+const devices = await import('../src/devices.js');
+const panels = await import('../src/panels.js');
 
 let passed = 0;
 const fails = [];
@@ -407,6 +409,80 @@ eq('配对码/线路没被白换', boxNew().code, codeBefore);
 // 酒店管理员换不了东家 —— 他连别家的存在都不知道。
 rooms.saveDevice(A.id, 'box-new', { propertyId: C.id });
 eq('**酒店管理员把盒子送不走**', boxNew().property_id, A.id);
+
+section('13. 一台服务器接几台面板');
+
+/*
+ * 面板 = 一台服务器；线路 = 那台服务器上的一个账号。
+ * 两者必须一起走 —— 同一对账号密码到另一台面板上要么认不过、
+ * 要么是另一批内容，分开传早晚拄错一半。
+ */
+const p2 = panels.create({
+  slug: 'second',
+  name: '第二台面板',
+  apiBase: 'http://10.0.0.9',
+  publicBase: 'https://example.test/stream/second/',
+});
+eq('末尾斜杠被去掉了', p2.public_base, 'https://example.test/stream/second');
+
+let panelThrew = null;
+try {
+  panels.create({ slug: 'Bad Slug', name: 'x', apiBase: 'http://a', publicBase: 'http://b' });
+} catch (e) { panelThrew = e.message; }
+ok('标识不合规就报错（它要进 URL）', panelThrew !== null);
+panelThrew = null;
+try {
+  panels.create({ slug: 'ok2', name: 'x', apiBase: '不是地址', publicBase: 'http://b' });
+} catch (e) { panelThrew = e.message; }
+ok('地址不是地址就报错', panelThrew !== null);
+
+props.save(C.id, { panelId: p2.id });
+const lineC = props.lineOf({ property_id: C.id, line_user: 'u', line_pass: 'p' });
+const lineA = props.lineOf({ property_id: A.id, line_user: 'u', line_pass: 'p' });
+eq('C 家走第二台面板', lineC.api, 'http://10.0.0.9');
+eq('C 家的播放地址也跟着换', lineC.pub, 'https://example.test/stream/second');
+ok('**A 家没被带跑**', lineA.api !== lineC.api);
+ok('**缓存键能区分两台面板上的同名线路**', lineA.panelId !== lineC.panelId);
+
+panelThrew = null;
+try { props.save(C.id, { panelId: 999999 }); } catch (e) { panelThrew = e.message; }
+ok('指向不存在的面板会报错', panelThrew !== null);
+
+const del = panels.remove(p2.id);
+eq('**还有酒店在用就不让删**', del.ok, false);
+props.save(C.id, { panelId: null });
+eq('改回默认后才能删', panels.remove(p2.id).ok, true);
+eq('最后一台不让删', panels.remove(panels.fallback().id).ok, false);
+
+// ------------------------------------------------ 人手指定的线路
+
+section('14. 给单台盒子指定线路，开机不该被盖掉');
+
+/*
+ * 后台自己的说明里写着「两层楼绑两条不同线路，就是两套频道」。
+ * 以前做不到：改完看着生效，盒子下次开机被 hello() 改回酒店的线路，
+ * 而界面上写的是「盒子重启后生效」—— 正好说反了。
+ */
+rooms.saveDevice(null, 'box-new', { propertyId: A.id });
+devices.hello({ deviceId: 'box-new' });
+eq('先跟着酒店走', boxNew().line_user, 'lineA');
+
+rooms.saveDevice(null, 'box-new', { lineUser: 'floor2', linePass: 'pw2' });
+eq('单独指定了 floor2', boxNew().line_user, 'floor2');
+eq('并且被标成了人手指定', Boolean(boxNew().line_pinned), true);
+
+devices.hello({ deviceId: 'box-new' });
+eq('**开机之后还是 floor2**', boxNew().line_user, 'floor2');
+
+rooms.saveDevice(null, 'box-new', { lineUser: '', linePass: '' });
+eq('清空就松开了', Boolean(boxNew().line_pinned), false);
+devices.hello({ deviceId: 'box-new' });
+eq('松开后开机又跟着酒店走', boxNew().line_user, 'lineA');
+
+rooms.saveDevice(null, 'box-new', { lineUser: 'floor2', linePass: 'pw2' });
+rooms.saveDevice(null, 'box-new', { propertyId: C.id });
+eq('**换了酒店就不再钉着上一家的线路**', Boolean(boxNew().line_pinned), false);
+eq('线路换成了 C 的', boxNew().line_user, 'lineC');
 
 // ---------------------------------------------------------------- 结果
 

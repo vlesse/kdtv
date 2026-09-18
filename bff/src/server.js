@@ -88,7 +88,7 @@ app.post('/api/device/hello', async (req, reply) => {
   let profile = null;
   if (bound) {
     try {
-      const info = await xui.authenticate(dev.line_user, dev.line_pass);
+      const info = await xui.authenticate(properties.lineOf(dev));
       profile = {
         status: info?.user_info?.status ?? 'Unknown',
         expiresAt: info?.user_info?.exp_date ?? null,
@@ -199,9 +199,10 @@ app.get('/api/channels', async (req, reply) => {
   const dev = requireLine(req, reply);
   if (!dev) return;
 
+  const line = properties.lineOf(dev);
   const [cats, streams] = await Promise.all([
-    xui.liveCategories(dev.line_user, dev.line_pass),
-    xui.liveStreams(dev.line_user, dev.line_pass),
+    xui.liveCategories(line),
+    xui.liveStreams(line),
   ]);
 
   const catList = Array.isArray(cats) ? cats : [];
@@ -224,7 +225,7 @@ app.get('/api/channels', async (req, reply) => {
       id: s.stream_id,
       num: s.num,
       name: s.name,
-      icon: xui.publicAsset(s.stream_icon),
+      icon: xui.publicAsset(s.stream_icon, line),
       categoryId: String(s.category_id ?? ''),
       categoryName: byId.get(String(s.category_id ?? '')) ?? 'Lainnya',
       hasArchive: Boolean(s.tv_archive),
@@ -251,7 +252,7 @@ app.get('/api/epg/:streamId', async (req, reply) => {
   const dev = requireLine(req, reply);
   if (!dev) return;
 
-  const raw = await xui.shortEpg(dev.line_user, dev.line_pass, req.params.streamId, 10);
+  const raw = await xui.shortEpg(properties.lineOf(dev), req.params.streamId, 10);
   const listings = (raw?.epg_listings ?? []).map((e) => ({
     title: xui.decodeEpgText(e.title),
     description: xui.decodeEpgText(e.description),
@@ -277,7 +278,7 @@ app.get('/api/play/:streamId', async (req, reply) => {
   }
 
   const ext = req.query.ext === 'ts' ? 'ts' : 'm3u8';
-  const direct = xui.liveUrl(dev.line_user, dev.line_pass, req.params.streamId, ext);
+  const direct = xui.liveUrl(properties.lineOf(dev), req.params.streamId, ext);
 
   /*
    * `relay=1` means "I cannot fetch this myself".
@@ -312,13 +313,12 @@ app.get('/api/vod', async (req, reply) => {
   const dev = requireLine(req, reply);
   if (!dev) return;
 
-  const u = dev.line_user;
-  const p = dev.line_pass;
+  const line = properties.lineOf(dev);
   const [movieCats, movies, seriesCats, series] = await Promise.all([
-    xui.vodCategories(u, p),
-    xui.vodStreams(u, p),
-    xui.seriesCategories(u, p),
-    xui.seriesList(u, p),
+    xui.vodCategories(line),
+    xui.vodStreams(line),
+    xui.seriesCategories(line),
+    xui.seriesList(line),
   ]);
 
   const unlocked = adult.isUnlocked(req, dev);
@@ -332,7 +332,7 @@ app.get('/api/vod', async (req, reply) => {
       id: m.stream_id,
       kind: 'movie',
       name: m.title || m.name,
-      icon: xui.publicAsset(m.stream_icon),
+      icon: xui.publicAsset(m.stream_icon, line),
       year: m.year || null,
       rating: Number(m.rating) || 0,
       categoryId: String(m.category_id ?? ''),
@@ -342,7 +342,7 @@ app.get('/api/vod', async (req, reply) => {
       id: s.series_id,
       kind: 'series',
       name: s.title || s.name,
-      icon: xui.publicAsset(s.cover),
+      icon: xui.publicAsset(s.cover, line),
       year: s.year || null,
       rating: Number(s.rating) || 0,
       categoryId: String(s.category_id ?? ''),
@@ -412,11 +412,10 @@ app.get('/api/vod/:kind/:id', async (req, reply) => {
   if (!(await adult.playAllowed(dev, adult.isUnlocked(req, dev), kind, id))) {
     return reply.code(403).send({ error: 'restricted' });
   }
-  const u = dev.line_user;
-  const p = dev.line_pass;
+  const line = properties.lineOf(dev);
 
   if (kind === 'movie') {
-    const raw = await xui.vodInfo(u, p, id);
+    const raw = await xui.vodInfo(line, id);
     const info = raw?.info ?? {};
     const data = raw?.movie_data ?? {};
     return {
@@ -430,14 +429,14 @@ app.get('/api/vod/:kind/:id', async (req, reply) => {
       year: yearOf(info.releasedate, info.release_date),
       released: info.releasedate || info.release_date || '',
       rating: Number(info.rating) || 0,
-      cover: xui.publicAsset(info.movie_image || info.cover_big),
+      cover: xui.publicAsset(info.movie_image || info.cover_big, line),
       duration: info.duration || '',
       container: data.container_extension || 'm3u8',
     };
   }
 
   if (kind === 'series') {
-    const raw = await xui.seriesInfo(u, p, id);
+    const raw = await xui.seriesInfo(line, id);
     const info = raw?.info ?? {};
     // The panel keys episodes by season number; flatten to an ordered list
     // because a remote steps through episodes, not through a nested object.
@@ -473,7 +472,7 @@ app.get('/api/vod/:kind/:id', async (req, reply) => {
       year: yearOf(info.year, info.releaseDate, info.release_date),
       released: info.releaseDate || info.release_date || '',
       rating: Number(info.rating) || 0,
-      cover: xui.publicAsset(info.cover),
+      cover: xui.publicAsset(info.cover, line),
       episodes,
     };
   }
@@ -496,8 +495,9 @@ app.get('/api/vod/play/:kind/:id', async (req, reply) => {
   const ext = /^[a-z0-9]{2,5}$/i.test(String(req.query.ext || '')) ? String(req.query.ext) : 'm3u8';
 
   let direct;
-  if (kind === 'movie') direct = xui.movieUrl(dev.line_user, dev.line_pass, id, ext);
-  else if (kind === 'episode') direct = xui.episodeUrl(dev.line_user, dev.line_pass, id, ext);
+  const line = properties.lineOf(dev);
+  if (kind === 'movie') direct = xui.movieUrl(line, id, ext);
+  else if (kind === 'episode') direct = xui.episodeUrl(line, id, ext);
   else return reply.code(400).send({ error: 'kind must be movie or episode' });
 
   // Same bargain as live: the client asks, having found out the hard way.

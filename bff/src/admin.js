@@ -30,6 +30,7 @@ import * as pay from './pay.js';
 import * as billing from './billing.js';
 import * as svc from './service.js';
 import * as props from './properties.js';
+import * as panels from './panels.js';
 import { PLATFORM } from './db.js';
 
 /**
@@ -176,6 +177,126 @@ export function registerAdmin(app) {
     return reply.code(401).send({ error: '密码不对' });
   });
 
+  // ------------------------------------------------------------- 面板
+
+  /*
+   * 接了哪几台 XUI / Xtream 面板。只有平台管得 ——
+   * 哪家酒店从哪台机器拿片，是发货层面的事。
+   */
+  app.get('/api/admin/panels', async (req, reply) => {
+    if (platformOnly(req, reply)) return;
+    return { panels: panels.overview() };
+  });
+
+  app.post('/api/admin/panels', async (req, reply) => {
+    if (platformOnly(req, reply)) return;
+    try {
+      panels.create(req.body ?? {});
+      return { ok: true, panels: panels.overview() };
+    } catch (err) {
+      return reply.code(err.statusCode ?? 500).send({ error: err.message });
+    }
+  });
+
+  app.post('/api/admin/panels/:id', async (req, reply) => {
+    if (platformOnly(req, reply)) return;
+    try {
+      if (!panels.update(Number(req.params.id), req.body ?? {})) {
+        return reply.code(404).send({ error: '面板不存在' });
+      }
+      return { ok: true, panels: panels.overview() };
+    } catch (err) {
+      return reply.code(err.statusCode ?? 500).send({ error: err.message });
+    }
+  });
+
+  app.delete('/api/admin/panels/:id', async (req, reply) => {
+    if (platformOnly(req, reply)) return;
+    const r = panels.remove(Number(req.params.id));
+    if (!r.ok) return reply.code(409).send({ error: r.error });
+    return { ok: true, panels: panels.overview() };
+  });
+
+  /**
+   * 拿一条线路去试这台面板，把它真能看到什么报回来。
+   *
+   * 存在的理由：面板和线路填错了，现象是酒店的电视全黑，而不是后台报错 ——
+   * 所以得有一个地方能在指过去之前先问一句「这对账号在这台机器上算数吗」。
+   */
+  app.post('/api/admin/panels/:id/test', async (req, reply) => {
+    if (platformOnly(req, reply)) return;
+    const panel = panels.find(Number(req.params.id));
+    if (!panel) return reply.code(404).send({ error: '面板不存在' });
+
+    const username = String(req.body?.lineUser ?? '').trim();
+    const password = String(req.body?.linePass ?? '').trim();
+    if (!username || !password) {
+      return reply.code(400).send({ error: '要同时给线路账号和密码' });
+    }
+
+    const line = {
+      username,
+      password,
+      api: panel.api_base,
+      pub: panel.public_base,
+      // 试的当下不进缓存：上一秒的结果回答不了「现在通不通」。
+      panelId: `test-${panel.id}-${Date.now()}`,
+    };
+
+    try {
+      const info = await xui.authenticate(line);
+      const status = info?.user_info?.auth === 1 || info?.user_info?.status === 'Active';
+      if (!status) {
+        return {
+          ok: false,
+          reason: '面板连上了，但这条线路在它上面不算数',
+          status: info?.user_info?.status ?? null,
+        };
+      }
+      /*
+       * 拿不到就是 null，不是 0。
+       *
+       * 片库大的面板，一份电影列表好几 MB，15 秒内拿不完很正常。
+       * 把超时显示成「0 部电影」会让人以为面板是空的，而它实际上有五千多部。
+       */
+      const n = (v) => (Array.isArray(v) ? v.length : null);
+      const [live, movies, series] = await Promise.all([
+        xui.liveStreams(line).catch(() => null),
+        xui.vodStreams(line).catch(() => null),
+        xui.seriesList(line).catch(() => null),
+      ]);
+      return {
+        ok: true,
+        status: info?.user_info?.status ?? null,
+        // 并发上限是最容易踩的坑：填了一条 max_connections=1 的线路，
+        // 第一个房间能看、第二个就打不开，看起来像系统坏了。
+        maxConnections: Number(info?.user_info?.max_connections ?? 0) || null,
+        expiresAt: info?.user_info?.exp_date ? Number(info.user_info.exp_date) : null,
+        live: n(live),
+        movies: n(movies),
+        series: n(series),
+      };
+    } catch (err) {
+      /*
+       * 面板对一条不存在的线路回的是 404，不是一句「密码错了」。
+       * 原样报「XUI 404 on auth」没人看得懂，而这正好是最常见的一种失败。
+       */
+      const msg = String(err.message ?? '');
+      const denied = ['401', '403', '404'].some((c) => msg.includes(c));
+      /* 连不上和认不过是两种毛病，该去查的地方也不同：前者查地址和防火墙，
+         后者查线路账号。原样甩一句 `fetch failed` 两边都不像。 */
+      const offline = msg.includes('fetch failed') || err.name === 'TimeoutError';
+      return {
+        ok: false,
+        reason: denied
+          ? '面板连上了，但这对账号密码在它上面不存在'
+          : offline
+            ? '连不上这台面板 —— 接口地址填错了，或者它没开、被防火墙挡着'
+            : msg,
+      };
+    }
+  });
+
   // ------------------------------------------------------------- 酒店
 
   /** 十家的概览。酒店管理员只会看到自己那一家。 */
@@ -209,6 +330,8 @@ export function registerAdmin(app) {
       delete body.lineUser;
       delete body.linePass;
       delete body.active;
+      // 换面板是发货层面的事，而且别家的面板酒店压根不该知道存在。
+      delete body.panelId;
     }
     try {
       const p = props.save(id, body);
@@ -373,17 +496,20 @@ export function registerAdmin(app) {
     if (!user || !pass) {
       return reply.code(409).send({ error: '这家酒店还没有线路，先在酒店设置里绑一条' });
     }
+    // 分类 id 是按面板编的，所以读分类必须走这家酒店自己那台面板 ——
+    // 读错面板的话，后台勾的受限分类到电视上对不上号。
+    const callLine = props.callLineFor(property);
 
     const arr = (v) => (Array.isArray(v) ? v : []);
     let live = [], movies = [], series = [], liveCats = [], vodCats = [], seriesCats = [];
     try {
       [liveCats, live, vodCats, movies, seriesCats, series] = await Promise.all([
-        xui.liveCategories(user, pass),
-        xui.liveStreams(user, pass),
-        xui.vodCategories(user, pass),
-        xui.vodStreams(user, pass),
-        xui.seriesCategories(user, pass),
-        xui.seriesList(user, pass),
+        xui.liveCategories(callLine),
+        xui.liveStreams(callLine),
+        xui.vodCategories(callLine),
+        xui.vodStreams(callLine),
+        xui.seriesCategories(callLine),
+        xui.seriesList(callLine),
       ]);
     } catch (err) {
       req.log.warn({ err: err.message }, 'admin: panel categories unreachable');
