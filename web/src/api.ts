@@ -338,6 +338,11 @@ export const api = {
       `/api/play/${streamId}${relay || needsRelay() ? '?relay=1' : ''}`,
     ),
 
+  preview: (streamId: number) =>
+    req<{ url: string | null; ageMs?: number | null; off?: boolean; restricted?: boolean }>(
+      `/api/preview/${streamId}`,
+    ),
+
   weather: () => req<Weather>('/api/weather'),
 
   homeConfig: () => req<HomeConfig>('/api/app/home'),

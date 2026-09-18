@@ -128,10 +128,40 @@ function pick(from: HTMLElement, dir: Dir): HTMLElement | null {
   return best;
 }
 
+/** 这个元素是被哪个盒子滚着的（纵向）。找不到就是整页不滚。 */
+function scrollerOf(el: HTMLElement): HTMLElement | null {
+  for (let n = el.parentElement; n; n = n.parentElement) {
+    const oy = getComputedStyle(n).overflowY;
+    if ((oy === 'auto' || oy === 'scroll') && n.scrollHeight > n.clientHeight + 1) return n;
+  }
+  return null;
+}
+
 export function focus(el: HTMLElement | null) {
   if (!el) return;
   el.focus({ preventScroll: true });
+
+  // 先按常规滚一次：横向的卡片轨道靠这一句居中。
   el.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
+
+  /*
+   * 焦点落到容器里**最靠上的那一排**时，把容器拉回最顶。
+   *
+   * 不这么做的话，`block: 'nearest'` 只保证「这个元素露出来」—— 从频道列表
+   * 往上回到大图上的「立即观看」时，大图本身还卡在视野上方，页面再也回不到
+   * 刚进来那一屏；继续按上只会跳到标题栏的返回箭头（它在滚动容器外面），
+   * 于是怎么按都回不去。用户报的就是这个。
+   *
+   * 判据不是「离顶部多少像素」而是「它上面还有没有别的可聚焦元素」——
+   * 大图有多高、有没有大图，各个页面都不一样，写死一个阈值迟早对不上。
+   */
+  const box = scrollerOf(el);
+  if (!box) return;
+  const top = el.getBoundingClientRect().top;
+  const above = Array.from(box.querySelectorAll<HTMLElement>('.focusable')).some(
+    (other) => other !== el && other.getBoundingClientRect().top < top - 1,
+  );
+  if (!above) box.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 /** Focus the first sensible element, preferring one marked data-autofocus. */

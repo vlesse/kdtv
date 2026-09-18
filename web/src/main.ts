@@ -539,9 +539,20 @@ function showAbout() {
 
 // ------------------------------------------------------------------- home
 
+/*
+ * 焦点停在一张卡上超过这么久，才去要预览图。
+ *
+ * 遥控器按住方向键是会连划过去十几张的，每划过一张就发一个请求等于让服务器
+ * 替一个根本没在看的频道去拉流。停下来才算「在看这一张」。
+ */
+const PREVIEW_DWELL_MS = 450;
+
 function channelCard(ch: Channel, go: (ch: Channel) => void = (c) => showPlayer(c.id)) {
   const t = tint(ch.name);
-  return h(
+  const shot = h('img', { class: 'card-shot', alt: '', 'aria-hidden': 'true' }) as HTMLImageElement;
+  let timer: number | undefined;
+
+  const card = h(
     'button',
     { class: 'card focusable', onclick: () => go(ch) },
     h(
@@ -549,6 +560,7 @@ function channelCard(ch: Channel, go: (ch: Channel) => void = (c) => showPlayer(
       { class: 'card-art', style: `--c1:${t.c1};--c2:${t.c2}` },
       h('span', { class: 'card-num', text: String(ch.num) }),
       ch.icon ? h('img', { src: ch.icon, alt: '', loading: 'lazy' }) : h('span', { class: 'card-initial', text: t.initial }),
+      shot,
     ),
     h(
       'div',
@@ -557,6 +569,35 @@ function channelCard(ch: Channel, go: (ch: Channel) => void = (c) => showPlayer(
       h('div', { class: 'card-sub', text: ch.categoryName }),
     ),
   );
+
+  /*
+   * 只有**当前这一张**挂着图。
+   *
+   * 91 张卡同时挂 91 张动图，浏览器会认认真真地把它们全解出来 —— 盒子会卡。
+   * 焦点一走就把 src 摘掉，解码随之停下。
+   */
+  card.addEventListener('focus', () => {
+    window.clearTimeout(timer);
+    timer = window.setTimeout(async () => {
+      try {
+        const r = await api.preview(ch.id);
+        // 等了一圈回来焦点早走了，就别贴上去了。
+        if (!r.url || document.activeElement !== card) return;
+        shot.src = r.url;
+        shot.onload = () => card.classList.add('has-shot');
+      } catch {
+        /* 抓不到就还是原来那张纯色卡，不用报错 */
+      }
+    }, PREVIEW_DWELL_MS);
+  });
+
+  card.addEventListener('blur', () => {
+    window.clearTimeout(timer);
+    card.classList.remove('has-shot');
+    shot.removeAttribute('src');
+  });
+
+  return card;
 }
 
 function rail(titleText: string, items: Channel[], note?: string, go?: (ch: Channel) => void) {

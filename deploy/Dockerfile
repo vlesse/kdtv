@@ -8,6 +8,11 @@ COPY web/ ./
 RUN npm run build
 
 FROM node:22-alpine
+
+# 频道预览图靠它抓（src/previews.js）。不转码、不推流，
+# 只是每个频道隔一阵子拉 1.5 秒截成一张会循环的 WebP。
+RUN apk add --no-cache ffmpeg
+
 WORKDIR /app
 COPY bff/package.json bff/package-lock.json* ./
 RUN npm ci --omit=dev

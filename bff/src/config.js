@@ -29,6 +29,12 @@ export const config = {
   // same volume carries both; a container sets it explicitly.
   mediaDir: process.env.MEDIA_DIR ?? './data/media',
 
+  previews: {
+    // 频道预览图多久重抓一次。直播画面十分钟前和现在差不多，
+    // 而每抓一次就是一条到上游的连接。
+    ttlMs: Number(process.env.PREVIEW_TTL_MS ?? 10 * 60_000),
+  },
+
   admin: {
     // Console password. Left unset, one is generated on first boot and
     // written to the log - the console is never open to the internet

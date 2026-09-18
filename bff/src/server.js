@@ -19,6 +19,7 @@ import { registerDownload } from './download.js';
 import * as pay from './pay.js';
 import * as billing from './billing.js';
 import * as properties from './properties.js';
+import * as previews from './previews.js';
 import { initials } from './pinyin.js';
 import { PLATFORM } from './db.js';
 import * as svc from './service.js';
@@ -260,6 +261,31 @@ app.get('/api/epg/:streamId', async (req, reply) => {
     stop: e.stop_timestamp ? Number(e.stop_timestamp) : null,
   }));
   return { listings };
+});
+
+/**
+ * 这个频道此刻大概在放什么 —— 一张会循环的 1.5 秒动图。
+ *
+ * 遥控器停在哪张卡上，前端就问哪一张。**永远立刻回**：有旧图先给旧图，
+ * 新的在后台抓。让遥控器等 ffmpeg 是不能接受的。
+ */
+app.get('/api/preview/:streamId', async (req, reply) => {
+  const dev = requireLine(req, reply);
+  if (!dev) return;
+
+  if (!settings.tvConfig(dev.property_id).channelPreview) return { url: null, off: true };
+
+  /*
+   * 受限频道一张都不生成，**而且按「没解锁」判**（第二个参数写死 false）。
+   * 图片落在 /media/ 下是公开可取的：给成人分类截一张，等于在 PIN 外面开窗。
+   * 解锁过的盒子也不例外 —— 文件一旦存在，谁都能取。
+   */
+  if (!(await adult.playAllowed(dev, false, 'live', req.params.streamId))) {
+    return { url: null, restricted: true };
+  }
+
+  const shot = previews.ensure(properties.lineOf(dev), req.params.streamId);
+  return { url: shot?.url ?? null, ageMs: shot?.ageMs ?? null };
 });
 
 app.get('/api/play/:streamId', async (req, reply) => {

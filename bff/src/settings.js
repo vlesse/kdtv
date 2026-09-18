@@ -234,6 +234,13 @@ export function tvConfig(pid) {
   const tpl = getSetting(pid, 'ui.template');
   return {
     diagnostics: getSetting(pid, 'ui.diagnostics') === '1',
+    /*
+     * 频道卡片上的预览动图。默认开。
+     *
+     * 留一个关得掉的开关，是因为它有真实代价：每抓一张就是一条到上游的连接，
+     * 而且老盒子解一张 480x270 的动图也不是白解的。哪家现场嫌卡，关掉就是。
+     */
+    channelPreview: getSetting(pid, 'ui.channelPreview') !== '0',
     liveProfile: LIVE_PROFILES.has(p) ? p : 'balanced',
     template: TEMPLATES.has(tpl) ? tpl : 'portal',
   };
@@ -242,6 +249,10 @@ export function tvConfig(pid) {
 export function setTv(pid, patch) {
   if ('diagnostics' in patch) {
     setSetting(pid, 'ui.diagnostics', patch.diagnostics ? '1' : null);
+  }
+  if ('channelPreview' in patch) {
+    // 默认是开，所以只有「关」才需要写一行进去。
+    setSetting(pid, 'ui.channelPreview', patch.channelPreview ? null : '0');
   }
   if ('liveProfile' in patch) {
     const v = String(patch.liveProfile ?? '');
