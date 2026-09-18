@@ -56,34 +56,62 @@ a browser too — see **Live over HTTPS: what was actually wrong** further down.
 The relay is opt-in and browser-only: **the boxes keep taking the redirect, so
 the fleet's video never touches this VPS.**
 
-## Pointing at a different panel
+## Panels: one server, several of them
 
 Nothing here is XUI.one-specific. Content comes over the **stock Xtream Codes
 API** — `player_api.php`, plus the `/live/ /movie/ /series/` URL shapes — so any
-Xtream-compatible panel works. Four places carry the panel's address, and
-missing one means no picture:
+Xtream-compatible panel works.
 
-| Where | What |
-| --- | --- |
-| nginx vhost, `location /stream/` | `proxy_pass` **and** `proxy_set_header Host` |
-| `.env` → `XUI_BASE` | how this service reaches the panel |
-| `.env` → `XUI_PUBLIC_BASE` | usually unchanged — it points at `/stream/` above, not at the panel |
-| collector `.env` → `XUI_DB_HOST`, `PANEL_REFRESH_CMD` | see below |
+**A panel is a machine. A line is an account on that machine.** Changing the
+line changes *what a hotel can see* (the panel decides that from the line's
+bouquets); changing the panel changes *which machine it comes from*. They
+travel together — a line only exists on its own panel, so pointing a hotel at
+panel B while its line lives on panel A means that hotel's televisions go
+black. The console's **试一下** button asks that question before you commit.
 
-Then on the panel itself: its **own** `url`/`port` setting, and the
-`servers` row where `is_main=1`. Those two are what `server_info` reports and
-what playback URLs are built from — leave them and every box still calls the
-old address.
+### Adding a panel
 
-Two things do **not** move:
+1. **Give the boxes a way to reach it over HTTPS.** They are in a hotel, the
+   page is HTTPS, and most panels are plain HTTP on a bare IP. If the panel has
+   its own certificate, skip this. Otherwise add a `location` to the nginx
+   vhost, copying the existing `/stream/` block:
+
+   ```nginx
+   location /stream-<slug>/ {
+       proxy_pass http://<panel-ip>/;
+       proxy_set_header Host <panel-ip>;
+       proxy_redirect off;
+       proxy_buffering off;
+   }
+   ```
+
+   Only the first hop goes through here. `direct_source=1` means the panel
+   answers with a 302 and the box pulls video straight from the upstream CDN,
+   so this proxy never carries a video stream.
+
+2. **Add it in the console** (`/admin/` → 面板) with two addresses:
+
+   | Field | Who uses it | Example |
+   | --- | --- | --- |
+   | 接口地址 `api_base` | this service, fetching channel lists | `http://10.140.0.4` |
+   | 播放地址 `public_base` | **the box**, fetching video | `https://<domain>/stream-<slug>` |
+
+   They are different on purpose: the first may be a private address, the
+   second must be reachable from a hotel room over TLS.
+
+3. **Point a hotel at it** in 酒店 → 面板 → 换, and set that hotel's line
+   (酒店 → 换线路) to a line that exists **on that panel**.
+
+### What does not move
 
 1. **The collector only speaks XUI.one.** It writes the panel's MySQL tables
    directly and then triggers the panel's own `cache_engine.php`; it does not
-   use the API. Pointing KDTV at someone else's panel means giving up
-   collection — their catalogue, their call.
-2. **One panel per KDTV server.** `config.xui.base` is global. *Lines* are
-   per-property; the panel address is not. Per-property panels means moving
-   the base into the properties table — a code change, not a setting.
+   use the API. It feeds **one** panel — the one in the collector's own `.env`.
+   Hotels on any other panel see whatever that panel already has.
+2. **The panel's own identity.** On the panel itself, its `url`/`port` setting
+   and the `servers` row where `is_main=1` are what `server_info` reports and
+   what its playback URLs are built from. A restored-from-backup panel still
+   claims to be the machine it was cloned from until those are changed.
 
 Also worth knowing before promising a room count: a property's rooms all share
 **one line**, so the line's `max_connections` is the ceiling on simultaneous
