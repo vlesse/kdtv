@@ -76,6 +76,18 @@ function capture(line, streamId, key) {
       '-user_agent', UA,
       // 上游卡住时别无限等：读超时 8 秒，整个进程 20 秒兜底。
       '-rw_timeout', '8000000',
+      /*
+       * 这两个不是可选项，去掉一个就一张也抓不出来。
+       *
+       * ffmpeg 7 以后的 HLS 解复用器会按**扩展名**决定一个分片能不能读，
+       * 而这些源的分片地址长这样：`http://cdn-live.example-upstream.net:8807/hls/O58hGD8V…`
+       * —— 根本没有扩展名。于是它直接报
+       * `not in allowed_segment_extensions` + `Invalid data found`，
+       * 看起来像流坏了，其实是 ffmpeg 自己不肯读。
+       * （面板自带的 4.4 没这个限制，所以在面板上手试是通的 —— 差点被这个骗过去。）
+       */
+      '-extension_picky', '0',
+      '-allowed_extensions', 'ALL',
       '-i', url,
       '-t', '1.5',
       '-an',
@@ -104,6 +116,14 @@ function capture(line, streamId, key) {
       try { renameSync(tmp, out); } catch { /* 目标被同时换掉了，无所谓 */ }
     } else {
       try { unlinkSync(tmp); } catch { /* 本来就没写出来 */ }
+      /*
+       * 失败要出声。
+       *
+       * 这个功能坏掉的样子是「卡片上一直没有图」—— 一个不会报错、也没人会去
+       * 查的静默故障。第一次上线就是这样：ffmpeg 嫌分片没扩展名，一张没出，
+       * 接口一直老老实实回 `url: null`。
+       */
+      if (err) console.warn(`[preview] ${key} 抓失败: ${err.trim().split('\n').pop()}`);
     }
   };
 
