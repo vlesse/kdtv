@@ -71,36 +71,58 @@ black. The console's **试一下** button asks that question before you commit.
 
 ### Adding a panel
 
-1. **Give the boxes a way to reach it over HTTPS.** They are in a hotel, the
-   page is HTTPS, and most panels are plain HTTP on a bare IP. If the panel has
-   its own certificate, skip this. Otherwise add a `location` to the nginx
-   vhost, copying the existing `/stream/` block:
+Entirely in the console — `/admin/` → 面板 → 接一台新面板. Two addresses, and
+they are different on purpose:
 
-   ```nginx
-   location /stream-<slug>/ {
-       proxy_pass http://<panel-ip>/;
-       proxy_set_header Host <panel-ip>;
-       proxy_redirect off;
-       proxy_buffering off;
-   }
-   ```
+| Field | Who uses it | Must be… |
+| --- | --- | --- |
+| 接口地址 `api_base` | this service, fetching channel lists | reachable **from this server**. A private address is fine. |
+| 播放地址 `public_base` | **the box**, fetching video | reachable **from a hotel room**. |
 
-   Only the first hop goes through here. `direct_source=1` means the panel
-   answers with a 302 and the box pulls video straight from the upstream CDN,
-   so this proxy never carries a video stream.
+For a panel on a public IP, both are just its address — `http://1.2.3.4`,
+plain HTTP, no certificate needed. Then **试一下** with a line that lives on
+that panel, and point a hotel at it (酒店 → 面板 → 换) plus set that hotel's
+line (酒店 → 换线路).
 
-2. **Add it in the console** (`/admin/` → 面板) with two addresses:
+**Plain HTTP from an HTTPS page is fine on a box, and this is measured, not
+assumed.** The shell sets `MIXED_CONTENT_ALWAYS_ALLOW` (MainActivity) and the
+manifest sets `usesCleartextTraffic`, so the WebView fetches it. With a panel's
+raw address as `public_base`, logcat says:
 
-   | Field | Who uses it | Example |
-   | --- | --- | --- |
-   | 接口地址 `api_base` | this service, fetching channel lists | `http://10.140.0.4` |
-   | 播放地址 `public_base` | **the box**, fetching video | `https://<domain>/stream-<slug>` |
+```
+https://ott.example.com/ ran insecure content from http://<PANEL_HOST>/live/…/4688.m3u8
+```
 
-   They are different on purpose: the first may be a private address, the
-   second must be reachable from a hotel room over TLS.
+*ran*, not *blocked* — and the channel played. The same has always been true of
+the CDN hop the panel redirects to, which is plain HTTP on every one of these
+streams.
 
-3. **Point a hotel at it** in 酒店 → 面板 → 换, and set that hotel's line
-   (酒店 → 换线路) to a line that exists **on that panel**.
+#### When to put a reverse proxy in front instead
+
+Three reasons, none of them required for a box to work:
+
+1. **The panel is only reachable privately** (ours is, over the VPC) — then
+   `public_base` cannot be the panel's own address.
+2. **Desk testing in a desktop browser.** A real browser blocks mixed content,
+   so a plain-HTTP panel plays on televisions and not on your laptop. (The
+   `?relay=1` path already covers browsers; this just avoids needing it.)
+3. **You would rather not hand the panel's address to every box.**
+
+The recipe, copying the existing `/stream/` block in the nginx vhost:
+
+```nginx
+location /stream-<slug>/ {
+    proxy_pass http://<panel-ip>/;
+    proxy_set_header Host <panel-ip>;
+    proxy_redirect off;
+    proxy_buffering off;
+}
+```
+
+…then set `public_base` to `https://<domain>/stream-<slug>`. Only the first hop
+goes through here: `direct_source=1` means the panel answers with a 302 and the
+box pulls video straight from the upstream CDN, so this proxy never carries a
+video stream.
 
 ### What does not move
 
