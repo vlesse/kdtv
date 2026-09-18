@@ -370,6 +370,44 @@ eq('但配对码留着', boxNew3().code, '654323');
 eq('也没写下半截线路', boxNew3().line_user, null);
 ok('认领仍然要说出来', savedC.adoptedInto === '还没配线路的店');
 
+section('12. 换一家酒店');
+
+/*
+ * 装错楼、调货、一家退租把盒子腾给另一家 —— 都是真事。
+ * 关键是四件事必须一起发生，漏一件就是一台
+ * 「看着在新店、其实还在旧店」的电视。
+ */
+db.prepare('UPDATE properties SET line_user = ?, line_pass = ? WHERE id = ?').run('lineC', 'passC', C.id);
+rooms.saveDevice(null, 'box-new', { roomId: '505' }, { adoptInto: A.id });
+adult.setDeviceAllowed('box-new', true);
+
+const movedRes = rooms.saveDevice(null, 'box-new', { propertyId: C.id });
+eq('控制台被告知换到了哪家', movedRes.moved && movedRes.moved.name, '还没配线路的店');
+eq('盒子归了 C', boxNew().property_id, C.id);
+eq('**房间号清掉了**', boxNew().room_id, null);
+eq('**片单换成了 C 的**', boxNew().line_user, 'lineC');
+eq('**上一家的成人授权没带过去**', Boolean(boxNew().adult_allowed), false);
+eq('A 店的 505 房还在（房间不跟着盒子走）',
+  Boolean(db.prepare('SELECT 1 FROM rooms WHERE property_id = ? AND room_id = ?').get(A.id, '505')), true);
+
+// 退回无主池：线路必须收走，否则它继续放上一家的片单。
+const back = rooms.saveDevice(null, 'box-new', { propertyId: null });
+ok('退回待分配也要报出来', back.moved !== null && back.moved.name === null);
+eq('不属于任何一家了', boxNew().property_id, null);
+eq('**线路被收走**', boxNew().line_user, null);
+ok('**重新发了配对码**', Boolean(boxNew().code));
+
+// 换到同一家 = 什么都不应该发生（别把人家的配对码白白换掉）。
+rooms.saveDevice(null, 'box-new', { propertyId: A.id });
+const codeBefore = boxNew().code;
+const again = rooms.saveDevice(null, 'box-new', { propertyId: A.id });
+eq('换到已经在的那一家，不算一次变更', again.moved, null);
+eq('配对码/线路没被白换', boxNew().code, codeBefore);
+
+// 酒店管理员换不了东家 —— 他连别家的存在都不知道。
+rooms.saveDevice(A.id, 'box-new', { propertyId: C.id });
+eq('**酒店管理员把盒子送不走**', boxNew().property_id, A.id);
+
 // ---------------------------------------------------------------- 结果
 
 console.log(`\n${'─'.repeat(52)}`);

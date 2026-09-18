@@ -1839,6 +1839,59 @@
           acts.append(out);
         }
 
+        /* 换东家。
+           只有平台管理员看得到 —— 酒店管理员连别家的存在都不知道。
+           做成「按一下才出现的下拉」而不是常驻的一列：换酒店是装机时做一次的事，
+           不是每天要点的东西，而误点一下的后果是一整台电视换了片单。 */
+        if (scope === 'platform') {
+          const move = el('button', { textContent: '换酒店' });
+          move.onclick = () => {
+            const pick = el(
+              'select',
+              { style: 'max-width:150px' },
+              ...propList.map((p) =>
+                el('option', {
+                  value: String(p.id),
+                  textContent: p.name,
+                  selected: p.id === d.propertyId,
+                }),
+              ),
+              el('option', { value: '', textContent: '— 退回待分配 —' }),
+            );
+            const go = el('button', { className: 'primary', textContent: '确定', style: 'padding:2px 8px;font-size:12px' });
+            const cancel = el('button', { textContent: '取消', style: 'padding:2px 8px;font-size:12px' });
+            go.onclick = async () => {
+              const target = pick.value ? Number(pick.value) : null;
+              if (target === (d.propertyId ?? null)) return renderRooms();
+              const to = pick.value ? pick.options[pick.selectedIndex].textContent : '待分配';
+              const warn =
+                '把这台盒子换到「' + to + '」？' + '\u000a\u000a' +
+                '房间号会清掉（房间号是每家自己编的，这边的 101 到那边不是同一个房间）、' +
+                '片单换成新东家的、成人授权收回。' +
+                (pick.value ? '' : '\u000a\u000a' + '退回待分配之后，电视上会重新显示配对码。');
+              if (!confirm(warn)) return;
+              try {
+                const r = await apiRoster('/devices/' + encodeURIComponent(d.deviceId), {
+                  method: 'POST',
+                  body: JSON.stringify({ propertyId: target }),
+                });
+                toast(
+                  r.moved && r.moved.name
+                    ? '已换到「' + r.moved.name + '」—— 这一行会从当前这家的表里消失，' +
+                        '去上面的酒店那栏点它的「管这家」就能看到'
+                    : '已退回待分配，电视上会重新显示配对码',
+                );
+              } catch (e) {
+                toast(e.message, true);
+              }
+              renderRooms();
+            };
+            cancel.onclick = renderRooms;
+            acts.replaceChildren(pick, ' ', go, ' ', cancel);
+          };
+          acts.append(move);
+        }
+
         const drop = el('button', { className: 'danger', textContent: '移除' });
         drop.onclick = async () => {
           const warn =

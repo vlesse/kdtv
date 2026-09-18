@@ -46,6 +46,29 @@ function ownerOf(deviceId) {
     ?.property_id ?? null;
 }
 
+/**
+ * 把某一家的线路交给这台盒子，规矩和 `devices.hello()` 一致。
+ *
+ * 拿不到线路时（`propertyId` 为 null = 退回无主池，或者这家根本还没配线路），
+ * **旧东家的线路一定要收回** —— 留着就是让这台电视继续放上一家的片单，
+ * 而那是客人唯一看得见的东西。收回之后它得重新配对，所以要有配对码。
+ *
+ * 已经在显示配对码的就沿用那一个：电视上那串数字不该因为后台点了一下就变，
+ * 不然对着屏幕抄号码的人手里的号码就作废了。
+ */
+function handOverLine(deviceId, propertyId) {
+  const line = propertyId == null ? null : properties.lineFor(properties.find(propertyId));
+  if (line?.username) {
+    db.prepare('UPDATE devices SET line_user = ?, line_pass = ?, code = NULL WHERE device_id = ?')
+      .run(line.username, line.password, deviceId);
+    return true;
+  }
+  const keep = db.prepare('SELECT code FROM devices WHERE device_id = ?').get(deviceId)?.code;
+  db.prepare('UPDATE devices SET line_user = NULL, line_pass = NULL, code = ? WHERE device_id = ?')
+    .run(keep ?? freshCode(), deviceId);
+  return false;
+}
+
 const getRoom = db.prepare('SELECT * FROM rooms WHERE property_id = ? AND room_id = ?');
 
 /**
@@ -171,11 +194,25 @@ export function saveDevice(pid, deviceId, patch, { adoptInto = null } = {}) {
     .get(...(pid == null ? [String(deviceId)] : [String(deviceId), pid]));
   if (!dev) return null;
 
-  // 把一台盒子划给哪家酒店是发货层面的事，只有平台管理员能改。
+  /*
+   * 换一家酒店 —— 发货层面的事，只有平台管理员能做（酒店管理员连别家的存在都看不见）。
+   *
+   * 四件事必须一起发生，漏一件就是一台「看着在新店、其实还在旧店」的电视：
+   *   **房间号清掉** —— 房间号是每家自己编的，A 店的 101 和 B 店的 101 不是同一个房间；
+   *   **线路换成新东家的** —— 片单是客人唯一看得见的东西，不换等于没换店；
+   *   **成人授权收回** —— 和退房同一个道理，上一家放开过的不留给下一家；
+   *   **`propertyId: null` 就是退回无主池** —— 线路收走、重新显示配对码。
+   */
+  let moved = null;
   if ('propertyId' in patch && pid == null) {
     const target = patch.propertyId == null ? null : Number(patch.propertyId);
-    db.prepare('UPDATE devices SET property_id = ?, room_id = NULL WHERE device_id = ?')
-      .run(target, dev.device_id);
+    if (target !== ownerOf(dev.device_id)) {
+      db.prepare('UPDATE devices SET property_id = ?, room_id = NULL WHERE device_id = ?')
+        .run(target, dev.device_id);
+      handOverLine(dev.device_id, target);
+      adult.setDeviceAllowed(dev.device_id, false);
+      moved = { propertyId: target, name: target == null ? null : (properties.find(target)?.name ?? null) };
+    }
   }
 
   /*
@@ -189,18 +226,9 @@ export function saveDevice(pid, deviceId, patch, { adoptInto = null } = {}) {
    */
   let adopted = null;
   if (pid == null && adoptInto != null && ownerOf(dev.device_id) == null) {
-    const line = properties.lineFor(properties.find(adoptInto));
-    if (line.username) {
-      db.prepare(
-        'UPDATE devices SET property_id = ?, line_user = ?, line_pass = ?, code = NULL WHERE device_id = ?',
-      ).run(adoptInto, line.username, line.password, dev.device_id);
-    } else {
-      /* 这家还没有线路（平台没设默认线路，这家自己也没设）。那就只认领、
-         不动配对码 —— 一台既没有码又没有线路的盒子，屏幕上会停在 '------'，
-         比继续显示配对码还难办。线路配好之后 hello() 会补上。 */
-      db.prepare('UPDATE devices SET property_id = ? WHERE device_id = ?')
-        .run(adoptInto, dev.device_id);
-    }
+    db.prepare('UPDATE devices SET property_id = ? WHERE device_id = ?')
+      .run(adoptInto, dev.device_id);
+    handOverLine(dev.device_id, adoptInto);
     adopted = adoptInto;
   }
 
@@ -245,8 +273,10 @@ export function saveDevice(pid, deviceId, patch, { adoptInto = null } = {}) {
 
   return {
     device: db.prepare('SELECT * FROM devices WHERE device_id = ?').get(dev.device_id),
-    // 有值 = 这一次顺带把盒子划给了这家，控制台要说出来。
+    // 有值 = 这一次顺带把无主的盒子划给了这家，控制台要说出来。
     adoptedInto: adopted == null ? null : (properties.find(adopted)?.name ?? null),
+    // 有值 = 这一次换了东家。`name` 为 null 表示退回了无主池。
+    moved,
   };
 }
 

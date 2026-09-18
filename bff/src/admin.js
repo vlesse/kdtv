@@ -655,6 +655,7 @@ export function registerAdmin(app) {
       return {
         ok: true,
         adoptedInto: saved.adoptedInto,
+        moved: saved.moved,
         ...rooms.roster(viewPid(req), { includeUnassigned: req.isPlatform }),
       };
     } catch (err) {
