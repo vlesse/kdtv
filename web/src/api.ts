@@ -340,6 +340,9 @@ export const api = {
       `/api/play/${streamId}${relay || needsRelay() ? '?relay=1' : ''}`,
     ),
 
+  appVersion: () =>
+    req<{ version: string; bundle?: string | null; minShellVersion?: number }>('/api/app/version'),
+
   preview: (streamId: number) =>
     req<{ url: string | null; ageMs?: number | null; off?: boolean; restricted?: boolean }>(
       `/api/preview/${streamId}`,

@@ -4,7 +4,8 @@ import fastifyStatic from '@fastify/static';
 import multipart from '@fastify/multipart';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 
 import { config } from './config.js';
 import { db, now } from './db.js';
@@ -669,8 +670,30 @@ app.get('/api/notices', async (req, reply) => {
 // The shell APK polls this. Because the UI is a web bundle served from here,
 // shipping a new UI to every box is a redeploy of this service - no APK
 // rollout, no visiting hotels.
+/**
+ * 这一版网页的指纹。
+ *
+ * **不能用 APP_VERSION** —— 那是环境变量里写死的，部署一百次也不会变，
+ * 拿它判断「网页换了没」永远是「没换」。
+ *
+ * 用构建产物本身：vite 打出来的 index.html 里引的是 `assets/index-<hash>.js`，
+ * 内容一变文件名就变。算一次，进程活着期间不会再变 —— 换了页面也就换了进程。
+ */
+const bundleId = (() => {
+  try {
+    // 和下面 fastify-static 用的是同一个路径，否则算的是另一份文件的指纹。
+    const dist = config.webDist || join(here, '..', '..', 'web', 'dist');
+    const html = readFileSync(join(dist, 'index.html'), 'utf8');
+    return createHash('sha1').update(html).digest('hex').slice(0, 12);
+  } catch {
+    return null; // 没有构建产物（开发时用 vite dev），那就没这个功能
+  }
+})();
+
 app.get('/api/app/version', async () => ({
   version: config.appVersion,
+  // 网页换了没，看这个。见 web/src/updater.ts。
+  bundle: bundleId,
   bundleUrl: '/',
   // Bump this only when the native shell itself must change.
   minShellVersion: 1,

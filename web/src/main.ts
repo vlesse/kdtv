@@ -17,6 +17,7 @@ import { createPlayback, setDefaultLiveProfile, setDiagnostics } from './hls';
 import { showPayment } from './paywall';
 import { searchView } from './search';
 import { initNav, focusFirst, onBack, grabBack } from './nav';
+import { startUpdater } from './updater';
 import { t, lang, setLang, LANGS, LANG_NAMES, pick, type Lang } from './i18n';
 import { playerView } from './player';
 import { detailView, posterCard, vodPlayerView } from './vod';
@@ -50,6 +51,13 @@ let branding: Branding | null = null;
 let rerender: () => void = () => showHome();
 
 initNav();
+
+/*
+ * 界面更新了就自己换上（只在没人用的时候）。
+ * 不加这一句的话，部署完墙上那台电视还是旧界面，
+ * 要等它下次断电重启 —— 实测踩过。
+ */
+startUpdater();
 
 // ------------------------------------------------------------------ shell
 
