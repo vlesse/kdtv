@@ -20,6 +20,7 @@ import * as pay from './pay.js';
 import * as billing from './billing.js';
 import * as properties from './properties.js';
 import * as previews from './previews.js';
+import { startPreviewSweeper } from './preview-sweeper.js';
 import { initials } from './pinyin.js';
 import { PLATFORM } from './db.js';
 import * as svc from './service.js';
@@ -216,9 +217,11 @@ app.get('/api/channels', async (req, reply) => {
    * list it has been handed is a list it can be made to render.
    */
   const unlocked = adult.isUnlocked(req, dev);
+  const adultOn = adult.adultEnabled(dev.property_id);
   const restricted = (categoryId) =>
-    adult.adultEnabled(dev.property_id) &&
+    adultOn &&
     adult.isAdultCategory(dev.property_id, byId.get(String(categoryId ?? '')), 'live', categoryId);
+  const wantPoster = settings.tvConfig(dev.property_id).channelPreview;
 
   const channels = streamList
     .filter((s) => unlocked || !restricted(s.category_id))
@@ -227,6 +230,14 @@ app.get('/api/channels', async (req, reply) => {
       num: s.num,
       name: s.name,
       icon: xui.publicAsset(s.stream_icon, line),
+      /*
+       * 这一台此刻大概在放什么，一张静图。
+       *
+       * 只是查一下文件在不在，**不触发抓取** —— 这个接口一次要过 91 个频道，
+       * 顺手触发的话一次开机就排出 91 个 ffmpeg。补图是扫描器的活。
+       * 受限频道走不到这里：上面那个 filter 已经把它们滤掉了。
+       */
+      poster: wantPoster && !restricted(s.category_id) ? previews.still(line, s.stream_id) : null,
       categoryId: String(s.category_id ?? ''),
       categoryName: byId.get(String(s.category_id ?? '')) ?? 'Lainnya',
       hasArchive: Boolean(s.tv_archive),
@@ -925,3 +936,7 @@ if (existsSync(webDist)) {
 }
 
 await app.listen({ port: config.port, host: config.host });
+
+// 把每个频道的预览图轮着补上 —— 客人要的是整屏扫过去每个台都有画面，
+// 不是「光标移到哪张才有哪张」。放在 listen 之后：它不应该拖着服务不起来。
+startPreviewSweeper(app.log);

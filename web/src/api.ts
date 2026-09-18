@@ -13,6 +13,8 @@ export interface Channel {
   num: number;
   name: string;
   icon: string | null;
+  /** 这一台此刻大概在放什么：一张服务端截的静图。没截到就是 null。 */
+  poster?: string | null;
   categoryId: string;
   categoryName: string;
   hasArchive: boolean;

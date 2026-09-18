@@ -41,9 +41,20 @@ let running = 0;
 /** 正在抓的 key，防止同一个频道被排两遍。 */
 const inFlight = new Set();
 
+/*
+ * 一次抓出两样东西：
+ *
+ *   **静图 .jpg**  每一张卡片的底图，不管有没有焦点 —— 客人扫一眼整屏就知道
+ *                  这会儿各台在放什么。
+ *   **动图 .webp** 只给当前有焦点的那一张。91 张同时解动图，盒子会跪。
+ *
+ * 两个都从同一条连接里出，所以多这一张静图基本不要钱。
+ */
 const keyOf = (line, streamId) => `${line.panelId}-${streamId}`;
 const fileOf = (key) => join(DIR, `${key}.webp`);
+const stillOf = (key) => join(DIR, `${key}.jpg`);
 const urlOf = (key) => `/media/previews/${key}.webp`;
+const stillUrlOf = (key) => `/media/previews/${key}.jpg`;
 
 function ageOf(path) {
   try {
@@ -60,6 +71,8 @@ function capture(line, streamId, key) {
   mkdirSync(DIR, { recursive: true });
   const out = fileOf(key);
   const tmp = `${out}.${process.pid}.tmp.webp`;
+  const still = stillOf(key);
+  const stillTmp = `${still}.${process.pid}.tmp.jpg`;
 
   /*
    * 抓的是**面板的内网/直连地址**，不是给盒子的那个播放地址 —— 这一步是服务器
@@ -95,6 +108,12 @@ function capture(line, streamId, key) {
       '-loop', '0',
       '-q:v', '55',
       tmp,
+      // 第二路输出：同一条连接里再落一张静图，给不带焦点的卡片当底图。
+      '-frames:v', '1',
+      '-an',
+      '-vf', 'scale=480:-2',
+      '-q:v', '6',
+      stillTmp,
     ],
     { stdio: ['ignore', 'ignore', 'pipe'] },
   );
@@ -114,8 +133,10 @@ function capture(line, streamId, key) {
       // 改名是原子的：读的人要么看到上一张完整的，要么看到新的，
       // 不会撞上写了一半的文件。
       try { renameSync(tmp, out); } catch { /* 目标被同时换掉了，无所谓 */ }
+      try { renameSync(stillTmp, still); } catch { /* 静图没出来不影响动图 */ }
     } else {
       try { unlinkSync(tmp); } catch { /* 本来就没写出来 */ }
+      try { unlinkSync(stillTmp); } catch { /* 同上 */ }
       /*
        * 失败要出声。
        *
@@ -146,4 +167,60 @@ export function ensure(line, streamId) {
     capture(line, streamId, key);
   }
   return age === Infinity ? null : { url: urlOf(key), ageMs: age };
+}
+
+/**
+ * 这个频道的静图地址，没有就是 null。**只查文件，不触发抓取。**
+ *
+ * `/api/channels` 每次都会把 91 个频道问一遍，要是顺手触发抓取，
+ * 一次开机就排出 91 个 ffmpeg —— 补图是扫描器的活（下面），不是列表接口的。
+ */
+export function still(line, streamId) {
+  if (!line?.api || !line?.username) return null;
+  const key = keyOf(line, streamId);
+  return ageOf(stillOf(key)) === Infinity ? null : stillUrlOf(key);
+}
+
+// ------------------------------------------------------------------ 扫描器
+
+/*
+ * 客人要的是**整屏一眼看过去每个台都有画面**，不是「光标移过去才有」。
+ * 所以不能等焦点来触发，得有人把 91 个台从头到尾轮着抓一遍。
+ *
+ * 一轮 91 个台、两个并行、每个约 2 秒 ≈ 一分半。默认 20 分钟一轮，
+ * 也就是一个核大约一成的占用。想更勤快或更省，调 PREVIEW_SWEEP_MS。
+ */
+let sweeping = false;
+
+async function waitForSlot() {
+  while (running >= MAX_PARALLEL) await new Promise((r) => setTimeout(r, 300));
+}
+
+/**
+ * 把一条线路上的一批频道轮着抓一遍。
+ *
+ * `skip` 是受限频道的 id —— 那些一张都不抓（图片在公开目录下，
+ * 给成人分类截一张等于在 PIN 外面开窗）。
+ */
+export async function sweep(line, streamIds, skip = new Set()) {
+  if (sweeping) return { skipped: true };
+  sweeping = true;
+  let done = 0;
+  try {
+    for (const id of streamIds) {
+      if (skip.has(Number(id))) continue;
+      const key = keyOf(line, id);
+      if (ageOf(fileOf(key)) <= config.previews.ttlMs) continue;
+      await waitForSlot();
+      if (!inFlight.has(key)) {
+        capture(line, id, key);
+        done++;
+      }
+    }
+    // 等最后几个落地，免得调用方以为已经抓完了。
+    while (running > 0) await new Promise((r) => setTimeout(r, 300));
+  } finally {
+    sweeping = false;
+  }
+  return { captured: done };
 }

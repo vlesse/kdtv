@@ -32,7 +32,10 @@ export const config = {
   previews: {
     // 频道预览图多久重抓一次。直播画面十分钟前和现在差不多，
     // 而每抓一次就是一条到上游的连接。
-    ttlMs: Number(process.env.PREVIEW_TTL_MS ?? 10 * 60_000),
+    ttlMs: Number(process.env.PREVIEW_TTL_MS ?? 20 * 60_000),
+    // 扫描器多久走一轮（把所有频道都补一遍）。0 = 关掉自动抓，
+    // 只靠焦点触发—— 上游流量贵的地方可以这么干。
+    sweepMs: Number(process.env.PREVIEW_SWEEP_MS ?? 20 * 60_000),
   },
 
   admin: {

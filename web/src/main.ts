@@ -552,6 +552,20 @@ function channelCard(ch: Channel, go: (ch: Channel) => void = (c) => showPlayer(
   const shot = h('img', { class: 'card-shot', alt: '', 'aria-hidden': 'true' }) as HTMLImageElement;
   let timer: number | undefined;
 
+  /*
+   * 静图当卡片底图，不管有没有焦点 —— 客人扫一眼整屏就知道各台在放什么。
+   * 会动的那张只给当前这一张（见下面的 focus）：91 张同时解动图，盒子会跪。
+   */
+  const poster = ch.poster
+    ? (h('img', {
+        class: 'card-poster',
+        src: ch.poster,
+        alt: '',
+        'aria-hidden': 'true',
+        loading: 'lazy',
+      }) as HTMLImageElement)
+    : null;
+
   const card = h(
     'button',
     { class: 'card focusable', onclick: () => go(ch) },
@@ -560,6 +574,7 @@ function channelCard(ch: Channel, go: (ch: Channel) => void = (c) => showPlayer(
       { class: 'card-art', style: `--c1:${t.c1};--c2:${t.c2}` },
       h('span', { class: 'card-num', text: String(ch.num) }),
       ch.icon ? h('img', { src: ch.icon, alt: '', loading: 'lazy' }) : h('span', { class: 'card-initial', text: t.initial }),
+      poster,
       shot,
     ),
     h(
