@@ -258,6 +258,31 @@ db.exec(`
 // 索引写在前面会因为找不到列而把容器弄崩（上线真炸过一次）。
 db.exec('CREATE INDEX IF NOT EXISTS idx_explore_property ON explore_spots(property_id)');
 
+/* ------------------------------------------------------------ 海报缓存
+
+ * 点播海报的本地副本（见 src/art.js）。表里存的是「这个 id 对应哪个远程
+ * 地址」，图片本身在 media/art/ 下。
+ *
+ * **只存我们自己发出去过的地址。** 取图那条路由查这张表，查不到就 404 ——
+ * 少了这张表，`/api/art/?url=…` 那种写法等于把服务器借给外人去抓任意地址。
+ *
+ * `mime` 是空的表示还没抓到过；`failed_at` 有值表示上次抓失败了，
+ * 隔一段时间才会再试，免得九百张卡片一起去撞一个挂掉的图床。
+ */
+db.exec(`
+  CREATE TABLE IF NOT EXISTS art_cache (
+    id         TEXT PRIMARY KEY,
+    url        TEXT NOT NULL,
+    mime       TEXT,
+    bytes      INTEGER,
+    created_at INTEGER NOT NULL,
+    fetched_at INTEGER,
+    failed_at  INTEGER,
+    last_hit   INTEGER
+  );
+`);
+db.exec('CREATE INDEX IF NOT EXISTS idx_art_seen ON art_cache(last_hit)');
+
 /* ------------------------------------------------------------------ 面板
 
  * 一台服务器可以接好几台 XUI 面板，每家酒店各自指定用哪一台。

@@ -4,7 +4,7 @@ import fastifyStatic from '@fastify/static';
 import multipart from '@fastify/multipart';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { createReadStream, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 
 import { config } from './config.js';
@@ -22,6 +22,7 @@ import * as billing from './billing.js';
 import * as properties from './properties.js';
 import * as previews from './previews.js';
 import * as explore from './explore.js';
+import * as art from './art.js';
 import { startPreviewSweeper } from './preview-sweeper.js';
 import { initials } from './pinyin.js';
 import { PLATFORM } from './db.js';
@@ -295,6 +296,28 @@ app.get('/api/explore', async (req, reply) => {
   return { spots: explore.published(dev.property_id) };
 });
 
+/*
+ * 一张海报。
+ *
+ * **故意不校验设备**：<img> 不会带我们的设备头，加了鉴权图就出不来。
+ * 能取到的只有我们自己发出去过的 id（sha1，猜不出来），而这些图本来就
+ * 公开挂在第三方图床上 —— 这里只是把它搬到客人够得着的那条连接上。
+ */
+app.get('/api/art/:id', async (req, reply) => {
+  const got = await art.ensure(req.params.id, req.log);
+  if (!got) return reply.code(404).send({ error: 'not found' });
+
+  art.touch(req.params.id);
+  // 一年、immutable：id 是地址的哈希，内容变了就是另一个 id，
+  // 所以盒子第二次进点播一个请求都不用发。
+  // 带上长度，省掉 chunked —— 二十几 KB 的图不值得分块传。
+  return reply
+    .type(got.mime)
+    .header('Content-Length', got.bytes)
+    .header('Cache-Control', 'public, max-age=31536000, immutable')
+    .send(createReadStream(got.path));
+});
+
 app.get('/api/preview/:streamId', async (req, reply) => {
   const dev = requireLine(req, reply);
   if (!dev) return;
@@ -384,7 +407,7 @@ app.get('/api/vod', async (req, reply) => {
       id: m.stream_id,
       kind: 'movie',
       name: m.title || m.name,
-      icon: xui.publicAsset(m.stream_icon, line),
+      icon: art.proxy(xui.publicAsset(m.stream_icon, line)),
       year: m.year || null,
       rating: Number(m.rating) || 0,
       categoryId: String(m.category_id ?? ''),
@@ -394,7 +417,7 @@ app.get('/api/vod', async (req, reply) => {
       id: s.series_id,
       kind: 'series',
       name: s.title || s.name,
-      icon: xui.publicAsset(s.cover, line),
+      icon: art.proxy(xui.publicAsset(s.cover, line)),
       year: s.year || null,
       rating: Number(s.rating) || 0,
       categoryId: String(s.category_id ?? ''),
@@ -443,6 +466,17 @@ app.get('/api/vod', async (req, reply) => {
     // bottom of the screen.
     .sort((a, b) => Number(a.adult) - Number(b.adult) || b.count - a.count);
 
+  /*
+   * 趁这一次把整个片库的海报先抓下来。
+   *
+   * 第一个进点播的客人只会等到眼前这几张（现抓），剩下的在后台慢慢填；
+   * 之后每个房间、每次开机都是本地命中。不等它 —— 列表这就得发出去。
+   */
+  void art.warm(
+    items.map((it) => String(it.icon ?? '').split('/api/art/')[1]).filter(Boolean),
+    req.log,
+  );
+
   return { categories, items };
 });
 
@@ -481,7 +515,7 @@ app.get('/api/vod/:kind/:id', async (req, reply) => {
       year: yearOf(info.releasedate, info.release_date),
       released: info.releasedate || info.release_date || '',
       rating: Number(info.rating) || 0,
-      cover: xui.publicAsset(info.movie_image || info.cover_big, line),
+      cover: art.proxy(xui.publicAsset(info.movie_image || info.cover_big, line)),
       duration: info.duration || '',
       container: data.container_extension || 'm3u8',
     };
@@ -524,7 +558,7 @@ app.get('/api/vod/:kind/:id', async (req, reply) => {
       year: yearOf(info.year, info.releaseDate, info.release_date),
       released: info.releaseDate || info.release_date || '',
       rating: Number(info.rating) || 0,
-      cover: xui.publicAsset(info.cover, line),
+      cover: art.proxy(xui.publicAsset(info.cover, line)),
       episodes,
     };
   }
@@ -977,3 +1011,12 @@ await app.listen({ port: config.port, host: config.host });
 // 把每个频道的预览图轮着补上 —— 客人要的是整屏扫过去每个台都有画面，
 // 不是「光标移到哪张才有哪张」。放在 listen 之后：它不应该拖着服务不起来。
 startPreviewSweeper(app.log);
+
+/*
+ * 没人再看的海报清掉。
+ *
+ * 一天一次就够 —— 它清的是「片库换过之后再也不会被请求的旧图」，
+ * 不是什么随时会涨起来的东西。放在 listen 之后，理由同上。
+ */
+const artSweep = setInterval(() => art.sweep(app.log), 24 * 3600_000);
+artSweep.unref();

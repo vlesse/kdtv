@@ -818,9 +818,28 @@ function showVod() {
     );
   }
 
-  for (const cat of vodCategories.filter((c) => !c.adult)) {
-    const items = openVod.filter((i) => i.categoryId === cat.id);
-    if (!items.length) continue;
+  /*
+   * 这一页是**先上屏、后填满**的，不是一次铺完。
+   *
+   * 铺完是九百多张海报、五千多个节点：盒子上按 OK 之后要黑等五六秒才换屏，
+   * 客人以为没按上，会连按好几下。而第一屏其实只看得见头两排的七八张。
+   *
+   * 所以先渲染够铺满第一屏的量，立刻 mount，剩下的在空闲时间一批批补进去。
+   * 补的顺序就是排面顺序，客人往下翻的速度永远追不上 —— 而就算追上了，
+   * 看到的也只是还没长出来的那一排，不是一块黑屏。
+   */
+  const FIRST = 2;   // 先铺满这么多排
+  const CHUNK = 12;  // 之后每批补几张
+
+  const shelves = vodCategories
+    .filter((c) => !c.adult)
+    .map((cat) => ({ cat, items: openVod.filter((i) => i.categoryId === cat.id) }))
+    .filter((s) => s.items.length);
+
+  const queue: Array<() => void> = [];
+
+  shelves.forEach(({ cat, items }, index) => {
+    const track = h('div', { class: 'rail-track posters' });
     body.append(
       h(
         'section',
@@ -831,10 +850,22 @@ function showVod() {
           h('h2', { text: cat.name }),
           h('span', { text: t('vod.titles', { n: items.length }) }),
         ),
-        h('div', { class: 'rail-track posters' }, ...items.map((it) => posterCard(it, showVodDetail))),
+        track,
       ),
     );
-  }
+
+    // 头几排先放一批，保证第一眼是满的；再往下的排一张都不先放 ——
+    // 它们在屏幕外面，先放只是拖慢上屏。
+    const head = index < FIRST ? items.slice(0, CHUNK) : [];
+    track.append(...head.map((it) => posterCard(it, showVodDetail)));
+
+    for (let i = head.length; i < items.length; i += CHUNK) {
+      const slice = items.slice(i, i + CHUNK);
+      queue.push(() => track.append(...slice.map((it) => posterCard(it, showVodDetail))));
+    }
+  });
+
+  drain(queue);
 
   rerender = showVod;
   const head = subHeader(t('tile.vod'));
@@ -848,6 +879,36 @@ function showVod() {
     }),
   );
   mount(h('div', { class: 'screen vod' }, scenery('vod'), head, body));
+}
+
+/**
+ * 趁空闲把排队的活干掉，一次一批。
+ *
+ * 用 requestIdleCallback 是因为这台机器上「空闲」是真的稀缺：客人按遥控器
+ * 的那一刻必须有反应，补海报的活得给按键让路。没有这个 API 的内核退回
+ * setTimeout —— 慢一点，但不会卡住输入。
+ *
+ * `token` 是用来作废的：客人退出点播页又进来，上一轮还没补完的活就该停了，
+ * 不然它还在往一个已经不在文档里的元素上塞节点。
+ */
+let drainToken = 0;
+
+function drain(queue: Array<() => void>) {
+  const token = ++drainToken;
+  const idle: (fn: () => void) => void =
+    typeof (window as any).requestIdleCallback === 'function'
+      ? (fn) => (window as any).requestIdleCallback(fn, { timeout: 500 })
+      : (fn) => window.setTimeout(fn, 16);
+
+  let i = 0;
+  const step = () => {
+    if (token !== drainToken) return;
+    const started = Date.now();
+    // 一口气干到 12 毫秒为止：再长就会在补图的中间吃掉一次按键。
+    while (i < queue.length && Date.now() - started < 12) queue[i++]();
+    if (i < queue.length) idle(step);
+  };
+  idle(step);
 }
 
 function showSearch() {
