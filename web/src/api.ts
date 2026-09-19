@@ -163,6 +163,26 @@ export interface Session {
   appVersion: string;
   /** Whether this room may show the restricted section at all. */
   adultAvailable?: boolean;
+  /**
+   * 首页要不要摆“旅游周边”那一格。
+   *
+   * 和成人频道同一个规矩：**这一格存不存在是服务端说的**。没填内容的酒店，
+   * 盒子根本不知道有这么一格，客人也就点不进一片空白。
+   */
+  exploreAvailable?: boolean;
+}
+
+/**
+ * 酒店周边一个值得去的地方。
+ *
+ * 名字和介绍都是四种语言各一份，留空的回退到英文 —— 和客房服务的菜单
+ * 一个规矩，前台学一次就够。
+ */
+export interface Spot {
+  id: number;
+  name: { en: string; zh: string | null; id: string | null; km: string | null };
+  desc: { en: string | null; zh: string | null; id: string | null; km: string | null };
+  image: string | null;
 }
 
 /**
@@ -383,6 +403,8 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ items, note }),
     }),
+
+  explore: () => req<{ spots: Spot[] }>('/api/explore'),
 
   notices: () =>
     req<{ notices: { id: number; title: string; body: string | null }[] }>('/api/notices'),

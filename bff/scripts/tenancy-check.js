@@ -28,6 +28,7 @@ const pay = await import('../src/pay.js');
 const svc = await import('../src/service.js');
 const devices = await import('../src/devices.js');
 const panels = await import('../src/panels.js');
+const explore = await import('../src/explore.js');
 
 let passed = 0;
 const fails = [];
@@ -483,6 +484,33 @@ rooms.saveDevice(null, 'box-new', { lineUser: 'floor2', linePass: 'pw2' });
 rooms.saveDevice(null, 'box-new', { propertyId: C.id });
 eq('**换了酒店就不再钉着上一家的线路**', Boolean(boxNew().line_pinned), false);
 eq('线路换成了 C 的', boxNew().line_user, 'lineC');
+
+section('15. 旅游周边也各归各家');
+
+explore.save(A.id, { name: { en: 'Angkor Wat', zh: '吴哥窟' }, image: '/media/a.jpg' });
+explore.save(A.id, { name: { en: 'Night Market' }, image: '/media/b.jpg', active: false });
+explore.save(C.id, { name: { en: 'Somewhere else' }, image: '/media/c.jpg' });
+
+eq('A 店有两条', explore.all(A.id).length, 2);
+eq('C 店只看得见自己那一条', explore.all(C.id).length, 1);
+eq('**下架的不发给电视**', explore.published(A.id).length, 1);
+eq('中文名存下来了', explore.published(A.id)[0].name.zh, '吴哥窟');
+
+// 没图的不发—— 电视上那是一张空白大卡片。
+const noPic = explore.save(A.id, { name: { en: 'No photo yet' } });
+eq('后台看得见没图的', explore.all(A.id).length, 3);
+eq('**但电视上不出现**', explore.published(A.id).length, 1);
+
+eq('**A 删不掉 C 的条目**', explore.remove(A.id, explore.all(C.id)[0].id), false);
+eq('C 的还在', explore.all(C.id).length, 1);
+eq('A 删得掉自己的', explore.remove(A.id, noPic.id), true);
+
+let expThrew = null;
+try { explore.save(A.id, { name: { zh: '只填了中文' } }); } catch (e) { expThrew = e.message; }
+ok('英文名缺了会报错', expThrew !== null);
+
+eq('A 有内容，首页那一格该出现', explore.any(A.id), true);
+eq('**B 没内容，那一格就不存在**', explore.any(C.id + 999), false);
 
 // ---------------------------------------------------------------- 结果
 

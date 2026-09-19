@@ -21,6 +21,7 @@ import * as pay from './pay.js';
 import * as billing from './billing.js';
 import * as properties from './properties.js';
 import * as previews from './previews.js';
+import * as explore from './explore.js';
 import { startPreviewSweeper } from './preview-sweeper.js';
 import { initials } from './pinyin.js';
 import { PLATFORM } from './db.js';
@@ -122,6 +123,11 @@ app.post('/api/device/hello', async (req, reply) => {
     profile,
     appVersion: config.appVersion,
     adultAvailable: bound ? adult.status(dev).available : false,
+    /*
+     * 旅游周边这一格要不要出现。和成人频道同一个规矩：
+     * **没有内容就不告诉盒子它存在**，免得客人点进去看到一片空白。
+     */
+    exploreAvailable: bound && dev.property_id != null ? explore.any(dev.property_id) : false,
   };
 });
 
@@ -281,6 +287,14 @@ app.get('/api/epg/:streamId', async (req, reply) => {
  * 遥控器停在哪张卡上，前端就问哪一张。**永远立刻回**：有旧图先给旧图，
  * 新的在后台抓。让遥控器等 ffmpeg 是不能接受的。
  */
+/** 酒店周边值得去的地方。只有上架、而且有图的才发出去。 */
+app.get('/api/explore', async (req, reply) => {
+  const dev = requireLine(req, reply);
+  if (!dev) return;
+  if (dev.property_id == null) return { spots: [] };
+  return { spots: explore.published(dev.property_id) };
+});
+
 app.get('/api/preview/:streamId', async (req, reply) => {
   const dev = requireLine(req, reply);
   if (!dev) return;

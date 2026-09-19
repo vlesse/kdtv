@@ -35,6 +35,9 @@ const zh: Dict = {
   'tile.service': '客房服务',
   'tile.about': '关于我们',
   'tile.adult': '成人频道',
+  'tile.explore': '旅游周边',
+  'explore.title': '旅游周边',
+  'explore.empty': '这家酒店还没有填周边信息。',
   'about.title': '关于',
   'about.room': '房间',
   'about.device': '设备编号',
@@ -183,8 +186,11 @@ const en: Dict = {
   'tile.live': 'TV Live',
   'tile.vod': 'VOD',
   'tile.service': 'Room Service',
-  'tile.about': 'About us',
+  'tile.about': 'About Us',
   'tile.adult': 'Adult',
+  'tile.explore': 'Local Explore',
+  'explore.title': 'Local Explore',
+  'explore.empty': 'Nothing has been added yet.',
   'about.title': 'About',
   'about.room': 'Room',
   'about.device': 'Device ID',
@@ -336,6 +342,7 @@ const km: Dict = {
   'tile.vod': 'ភាពយន្ត',
   'tile.service': 'សេវាកម្មបន្ទប់',
   'tile.about': 'អំពីយើង',
+  'tile.explore': 'ទីកន្លែងជុំវិញ',
   'tile.adult': 'មនុស្សពេញវ័យ',
   'about.title': 'អំពី',
   'about.room': 'បន្ទប់',
@@ -486,6 +493,7 @@ const id: Dict = {
   'tile.vod': 'Film & Serial',
   'tile.service': 'Layanan Kamar',
   'tile.about': 'Tentang kami',
+  'tile.explore': 'Wisata Sekitar',
   'tile.adult': 'Dewasa',
   'about.title': 'Tentang',
   'about.room': 'Kamar',
@@ -667,6 +675,16 @@ export function t(key: string, vars?: Record<string, string | number>): string {
  * Pick the best available translation of a name the server sent, e.g. a menu
  * item. Falls through the other languages rather than showing nothing.
  */
+/**
+ * 按**指定**语言取一条文案，不看当前选的是什么。
+ *
+ * 底部导航条一格里有两行：上面永远是英文，下面是客人选的那种语言。
+ * 英文当标题是因为它是这类场所唯一人人认得出的那一行 —— 图标之外的第二条线索。
+ */
+export function tIn(l: Lang, key: string): string {
+  return DICTS[l]?.[key] ?? DICTS.en[key] ?? key;
+}
+
 export function pick(names: Partial<Record<Lang, string | null>>): string {
   const order: Lang[] = [current, 'en', 'id', 'zh', 'km'];
   for (const l of order) {

@@ -31,6 +31,7 @@ import * as billing from './billing.js';
 import * as svc from './service.js';
 import * as props from './properties.js';
 import * as panels from './panels.js';
+import * as explore from './explore.js';
 import { PLATFORM } from './db.js';
 
 /**
@@ -175,6 +176,38 @@ export function registerAdmin(app) {
     const p = props.authenticate(given);
     if (p) return { ok: true, scope: 'property', property: props.publicProperty(p) };
     return reply.code(401).send({ error: '密码不对' });
+  });
+
+  // --------------------------------------------------------- 旅游周边
+
+  /*
+   * 一家酒店只看得见自己的周边条目。和菜单一样，靠的是每条查询里的
+   * property_id，不是界面上藏几个按钮。
+   */
+  app.get('/api/admin/explore', async (req, reply) => {
+    const pid = target(req, reply);
+    if (pid === undefined) return;
+    return { spots: explore.all(pid), languages: explore.languages };
+  });
+
+  app.post('/api/admin/explore', async (req, reply) => {
+    const pid = target(req, reply);
+    if (pid === undefined) return;
+    try {
+      explore.save(pid, req.body ?? {});
+      return { ok: true, spots: explore.all(pid) };
+    } catch (err) {
+      return reply.code(err.statusCode ?? 500).send({ error: err.message });
+    }
+  });
+
+  app.delete('/api/admin/explore/:id', async (req, reply) => {
+    const pid = target(req, reply);
+    if (pid === undefined) return;
+    if (!explore.remove(pid, req.params.id)) {
+      return reply.code(404).send({ error: '这一条不存在' });
+    }
+    return { ok: true, spots: explore.all(pid) };
   });
 
   // ------------------------------------------------------------- 面板

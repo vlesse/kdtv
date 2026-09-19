@@ -8,6 +8,7 @@ import {
   type Channel,
   type HomeConfig,
   type Session,
+  type Spot,
   type VodDetail,
   type VodItem,
   type TvTemplate,
@@ -34,6 +35,9 @@ let vodCategories: Category[] = [];
 
 /** Whether this room may show the restricted section at all. Server's call. */
 let adultAvailable = false;
+
+/** 这家酒店填了周边内容没有。同样是服务端说了算。 */
+let exploreAvailable = false;
 
 /**
  * 这家酒店用哪一套电视界面，后台定的（见 bff/src/settings.js）。
@@ -337,6 +341,7 @@ async function boot() {
   }
 
   adultAvailable = Boolean(session.adultAvailable);
+  exploreAvailable = Boolean(session.exploreAvailable);
 
   try {
     const data = await api.channels();
@@ -397,17 +402,28 @@ function showPortalHome() {
   onBack(() => false);
   rerender = showHome;
 
+  /*
+   * 传的是 i18n 的 key，不是译好的字。
+   *
+   * 每格要摆两行 —— 上面英文、下面客人选的语言 —— 译好的字只剩一种语言，
+   * 另一行就没处来了。key 交给 home.ts，它自己取两次。
+   */
   const tiles: Tile[] = [
-    { id: 'live', icon: 'tv', label: t('tile.live'), go: showLive },
-    { id: 'vod', icon: 'film', label: t('tile.vod'), go: showVod },
-    { id: 'service', icon: 'grid', label: t('tile.service'), go: showService },
-    { id: 'about', icon: 'building', label: t('tile.about'), go: showAbout },
+    { id: 'live', icon: 'tv', key: 'tile.live', go: showLive },
+    { id: 'vod', icon: 'film', key: 'tile.vod', go: showVod },
+    { id: 'service', icon: 'grid', key: 'tile.service', go: showService },
+    { id: 'about', icon: 'building', key: 'tile.about', go: showAbout },
   ];
+
+  // 填了周边内容才摆这一格。空的比没有更难看。
+  if (exploreAvailable) {
+    tiles.push({ id: 'explore', icon: 'map', key: 'tile.explore', go: showExplore });
+  }
 
   // Last, and only where it is allowed. A room that is not entitled never
   // learns the tile exists, because the server never told this box about it.
   if (adultAvailable) {
-    tiles.push({ id: 'adult', icon: 'lock', label: t('tile.adult'), go: enterAdult });
+    tiles.push({ id: 'adult', icon: 'lock', key: 'tile.adult', go: enterAdult });
   }
 
   mount(launcherView(session, tiles, showLangPicker));
@@ -489,6 +505,9 @@ function openLiveFirstMenu(host: HTMLElement) {
   }
   entries.push({ id: 'service', icon: 'grid', label: t('tile.service'), go: showService });
   entries.push({ id: 'about', icon: 'building', label: t('tile.about'), go: showAbout });
+  if (exploreAvailable) {
+    entries.push({ id: 'explore', icon: 'map', label: t('tile.explore'), go: showExplore });
+  }
   if (adultAvailable) {
     entries.push({ id: 'adult', icon: 'lock', label: t('tile.adult'), go: enterAdult });
   }
@@ -1275,6 +1294,102 @@ async function showService() {
     body.append(h('div', { class: 'centre' }, h('p', { class: 'muted', text: 'Menu tidak tersedia.' })));
     console.error(err);
   }
+}
+
+// ------------------------------------------------------------- 旅游周边
+
+/**
+ * 酒店周边值得去的地方。一屏大图卡片，点进去看一张图加一段介绍。
+ *
+ * 做成两层是因为介绍能写到六百字：塞在卡片上谁也读不完，而卡片墙上要的
+ * 只是一眼看出那是什么地方。
+ */
+async function showExplore() {
+  onBack(() => {
+    showHome();
+    return true;
+  });
+  rerender = showExplore;
+
+  const body = h('div', { class: 'body' });
+  const screen = h('div', { class: 'screen' }, subHeader(t('explore.title')), body);
+  mount(screen);
+
+  let spots: Spot[] = [];
+  try {
+    spots = (await api.explore()).spots;
+  } catch (err) {
+    console.error(err);
+  }
+
+  if (!spots.length) {
+    // 服务端本来就不该把这一格发下来，走到这里说明内容刚被下架。
+    body.append(h('div', { class: 'centre' }, h('p', { class: 'muted', text: t('explore.empty') })));
+    focusFirst(screen);
+    return;
+  }
+
+  body.append(
+    h(
+      'div',
+      { class: 'grid spots' },
+      ...spots.map((spot) =>
+        h(
+          'button',
+          { class: 'spot focusable', onclick: () => showSpot(spot) },
+          h(
+            'span',
+            { class: 'spot-art' },
+            spot.image ? h('img', { src: spot.image, alt: '', loading: 'lazy' }) : null,
+          ),
+          h(
+            'span',
+            { class: 'spot-meta' },
+            h('span', { class: 'spot-name', text: pick(spot.name) }),
+            secondName(spot.name)
+              ? h('span', { class: 'spot-sub', text: secondName(spot.name) })
+              : null,
+          ),
+        ),
+      ),
+    ),
+  );
+  focusFirst(screen);
+}
+
+/** 一个去处的详情。返回回到卡片墙，不是回首页。 */
+function showSpot(spot: Spot) {
+  onBack(() => {
+    showExplore();
+    return true;
+  });
+  rerender = () => showSpot(spot);
+
+  const desc = pick(spot.desc);
+  const screen = h(
+    'div',
+    { class: 'screen' },
+    // 顶栏还是「旅游周边」：它是面包屑，说明按左上角回到哪里去。
+    // 地名在下面写成大字，顶栏再写一遍只是重复。
+    subHeader(t('explore.title')),
+    h(
+      'div',
+      { class: 'body spot-page' },
+      spot.image ? h('img', { class: 'spot-hero', src: spot.image, alt: '' }) : null,
+      h('h2', { class: 'spot-title', text: pick(spot.name) }),
+      secondName(spot.name) ? h('p', { class: 'spot-sub', text: secondName(spot.name) }) : null,
+      // pre-wrap：前台是按行敲的地址和营业时间，挤成一段就没法看了。
+      desc ? h('p', { class: 'spot-body', text: desc }) : null,
+      h('button', {
+        class: 'btn focusable',
+        'data-autofocus': '',
+        text: t('player.back'),
+        onclick: showExplore,
+      }),
+    ),
+  );
+  mount(screen);
+  focusFirst(screen);
 }
 
 boot();

@@ -227,6 +227,37 @@ const settingsRebuilt = rebuild(
  * 只在库里已经有东西、却还没有任何酒店的时候建 —— 也就是从单店版升级上来的
  * 那一次。全新安装什么都不建，第一家由操作员在后台自己填。
  */
+/* ---------------------------------------------------------------- 旅游周边
+
+ * 酒店周边值得去的地方。一条就是一个去处：一张图、四种语言的
+ * 名字和介绍、排序、上不上架。形状故意跟 `service_items` 一样 ——
+ * 后台那张表前台已经会用了，再发明一种用法没意义。
+ *
+ * `desc_*` 是一段纯文本，不收 HTML：这段字要显示在电视上，
+ * 而电视上没有人能处理一段排版坏掉的内容。
+ */
+db.exec(`
+  CREATE TABLE IF NOT EXISTS explore_spots (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    property_id INTEGER NOT NULL,
+    name_en     TEXT NOT NULL,
+    name_zh     TEXT,
+    name_id     TEXT,
+    name_km     TEXT,
+    desc_en     TEXT,
+    desc_zh     TEXT,
+    desc_id     TEXT,
+    desc_km     TEXT,
+    image       TEXT,
+    active      INTEGER NOT NULL DEFAULT 1,
+    sort_order  INTEGER NOT NULL DEFAULT 0,
+    created_at  INTEGER NOT NULL
+  );
+`);
+// 加列和加索引要成对且索引在后 —— 旧库里 CREATE TABLE IF NOT EXISTS 不做事，
+// 索引写在前面会因为找不到列而把容器弄崩（上线真炸过一次）。
+db.exec('CREATE INDEX IF NOT EXISTS idx_explore_property ON explore_spots(property_id)');
+
 /* ------------------------------------------------------------------ 面板
 
  * 一台服务器可以接好几台 XUI 面板，每家酒店各自指定用哪一台。

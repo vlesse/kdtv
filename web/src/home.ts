@@ -1,6 +1,6 @@
 import { api, type HomeBackground, type HomeConfig, type Session, type Weather } from './api';
 import { h } from './ui';
-import { t, lang, LANG_NAMES } from './i18n';
+import { t, tIn, lang, LANG_NAMES } from './i18n';
 
 /**
  * The launcher.
@@ -12,79 +12,96 @@ import { t, lang, LANG_NAMES } from './i18n';
 
 // ---------------------------------------------------------------- icons
 
-export type IconName = 'tv' | 'film' | 'grid' | 'building' | 'star' | 'lock';
+export type IconName = 'tv' | 'film' | 'cast' | 'grid' | 'building' | 'map' | 'star' | 'lock';
 
-/** A rounded square, the shape the grid icon repeats four times. */
-function roundedSquare(x: number, y: number, size: number, r: number): string {
-  const side = size - 2 * r;
+/*
+ * 图标是画出来的，不是打包进来的图片。
+ *
+ * 这一套是照着批过的那张稿子一笔一笔描的：带天线的电视、场记板、投屏、
+ * 餐盖加一只手、信息、折叠地图加图钉、锁。画成路径而不是发图片，是因为这东西
+ * 要在 1366 到 4K 的电视上都清楚，还要跟着焦点变色 —— 而且一个字节不下载。
+ *
+ * **挖空的地方是真挖穿的**（场记板的斜纹、餐盖上的高光、图钉的孔、i 字）：
+ * 用 mask 做，不是拿底色去盖。这条导航条是半透明压在照片上的，底下每处颜色
+ * 都不一样，拿颜色去盖换张照片就露馅。
+ */
+let maskSeq = 0;
+
+const ICON_MARKUP: Record<IconName, () => string> = {
+  tv: () => `
+    <path d="M22 6 L32 18.5 L42 6" stroke="currentColor" stroke-width="4.3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="5.2" y="18.5" width="53.6" height="34" rx="5.5" stroke="currentColor" stroke-width="4.3" fill="none"/>
+    <circle cx="49" cy="27.5" r="3" fill="currentColor"/>
+    <path d="M22 58.5 H42" stroke="currentColor" stroke-width="4.3" stroke-linecap="round"/>`,
+
+  film: () => masked(`
+    <g transform="rotate(-14 32 12)">
+      <rect x="3" y="3" width="58" height="15" rx="2.6" fill="#fff"/>
+      <path d="M13 3 L8 18 M24 3 L19 18 M35 3 L30 18 M46 3 L41 18 M57 3 L52 18" stroke="#000" stroke-width="4.4"/>
+    </g>
+    <path d="M4 25h56a5 5 0 0 1 5 5v27a5 5 0 0 1-5 5H4a5 5 0 0 1-5-5V30a5 5 0 0 1 5-5z" fill="#fff"/>
+    <path d="M25 32 L25 55 L45 43.5 Z" fill="#000"/>`),
+
+  cast: () => `
+    <g fill="none" stroke="currentColor" stroke-linecap="round">
+      <path d="M17 13.5a3.4 3.4 0 0 1 3.4-3.4h35.2a3.4 3.4 0 0 1 3.4 3.4v28.2a3.4 3.4 0 0 1-3.4 3.4H45" stroke-width="4.3"/>
+      <path d="M7 53.5a4.5 4.5 0 0 1 4.5 4.5" stroke-width="4"/>
+      <path d="M7 45a13 13 0 0 1 13 13" stroke-width="4"/>
+      <path d="M7 36.5A21.5 21.5 0 0 1 28.5 58" stroke-width="4"/>
+    </g>
+    <path d="M36.5 44 L46 58 H27 Z" fill="currentColor" stroke="currentColor" stroke-width="2.6" stroke-linejoin="round"/>`,
+
+  grid: () => masked(`
+    <rect x="30" y="5" width="4" height="7" rx="2" fill="#fff"/>
+    <path d="M9 37.5a23 23 0 0 1 46 0z" fill="#fff"/>
+    <path d="M19.5 34a14.5 14.5 0 0 1 11-13" stroke="#000" stroke-width="2.6" fill="none" stroke-linecap="round"/>
+    <rect x="5" y="39" width="54" height="5.2" rx="2.6" fill="#fff"/>
+    <path d="M7 52.5c4.6 4.3 9.7 6.4 15.2 6.4h15c2 0 3.1-1.1 3.1-2.5 0-1.4-1.1-2.5-3.1-2.5h-9.1c-2.8 0-4.7-1.5-6.9-3.4-2.2-2-4.4-3.1-7-3.1-2.8 0-5.1 1.7-7.2 5.1z" fill="#fff"/>`),
+
+  building: () => masked(`
+    <circle cx="32" cy="33" r="29" fill="#fff"/>
+    <path d="M35.6 16.4a4 4 0 1 1-1.5 7.9 4 4 0 0 1 1.5-7.9zM27.4 47.2l3.1-13.6c.2-.9-.1-1.3-.8-1.3h-2.4l.6-2.7 8.8-1.1-3.7 16.7c-.2.9.1 1.3.8 1.3h2.4l-.6 2.7-8.8 1.1z" fill="#000"/>`),
+
+  map: () => masked(`
+    <g fill="none" stroke="#fff" stroke-width="4.3" stroke-linejoin="round">
+      <path d="M4 16 L21 9.6 L43 16 L60 9.6 V52 L43 58.4 L21 52 L4 58.4 Z"/>
+      <path d="M21 9.6 V52 M43 16 V58.4"/>
+    </g>
+    <path d="M45 0a12.6 12.6 0 0 0-12.6 12.6c0 8.4 12.6 20.4 12.6 20.4s12.6-12 12.6-20.4A12.6 12.6 0 0 0 45 0z" fill="#000"/>
+    <path d="M45 2.6a10 10 0 0 0-10 10c0 7 10 17 10 17s10-10 10-17a10 10 0 0 0-10-10z" fill="#fff"/>
+    <circle cx="45" cy="12.2" r="3.5" fill="#000"/>`),
+
+  lock: () => masked(`
+    <path d="M20.5 28.5V20a11.5 11.5 0 0 1 23 0v8.5" stroke="#fff" stroke-width="4.3" fill="none" stroke-linecap="round"/>
+    <rect x="10" y="28" width="44" height="32" rx="5" fill="#fff"/>
+    <circle cx="32" cy="41" r="4.2" fill="#000"/>
+    <path d="M32 43.5 L32 50" stroke="#000" stroke-width="4.2" stroke-linecap="round"/>`),
+
+  star: () => `
+    <path d="M32 5 L40 24 L61 26 L45 40 L50 60 L32 49 L14 60 L19 40 L3 26 L24 24 Z"
+          fill="none" stroke="currentColor" stroke-width="4.3" stroke-linejoin="round"/>`,
+};
+
+/**
+ * 白的留下、黑的挖掉，最后整块涂成 currentColor。
+ *
+ * mask 的 id 得是全局唯一的：一屏上七个图标同时在，重名的话后面的会去引用
+ * 前面那块 mask，图形就串了。
+ */
+function masked(inner: string): string {
+  const id = `ic${++maskSeq}`;
   return (
-    `M${x + r} ${y}h${side}a${r} ${r} 0 0 1 ${r} ${r}` +
-    `v${side}a${r} ${r} 0 0 1 ${-r} ${r}` +
-    `h${-side}a${r} ${r} 0 0 1 ${-r} ${-r}` +
-    `v${-side}a${r} ${r} 0 0 1 ${r} ${-r}z`
+    `<mask id="${id}" maskUnits="userSpaceOnUse" x="0" y="0" width="64" height="64">` +
+    `<rect width="64" height="64" fill="#000"/>${inner}</mask>` +
+    `<rect width="64" height="64" fill="currentColor" mask="url(#${id})"/>`
   );
 }
 
-/**
- * Outline icons, drawn rather than shipped.
- *
- * These trace the set the property supplied: a retro TV with antennae, a film
- * strip with sprocket holes, four rounded squares, and a pair of buildings
- * with a sloped roofline. Drawing them as paths rather than serving the
- * artwork keeps them crisp at any tile size, recolourable on focus, and worth
- * nothing in download.
- */
 export function icon(name: IconName): SVGElement {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('viewBox', '0 0 48 48');
-  svg.setAttribute('fill', 'none');
-  svg.setAttribute('stroke', 'currentColor');
-  svg.setAttribute('stroke-width', '2.8');
-  svg.setAttribute('stroke-linecap', 'round');
-  svg.setAttribute('stroke-linejoin', 'round');
+  svg.setAttribute('viewBox', '0 0 64 64');
   svg.setAttribute('aria-hidden', 'true');
-
-  const paths: Record<IconName, string[]> = {
-    tv: [
-      // Screen body, then the V of the antennae, then the foot.
-      'M12 15h24a4 4 0 0 1 4 4v17a4 4 0 0 1-4 4H12a4 4 0 0 1-4-4V19a4 4 0 0 1 4-4z',
-      'M24 15L16 6M24 15l8-9',
-      'M15 44h18',
-    ],
-    film: [
-      // Strip, the two sprocket bands, the perforations, then the play mark.
-      'M9 11h30a2 2 0 0 1 2 2v22a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V13a2 2 0 0 1 2-2z',
-      'M7 17h34M7 31h34',
-      'M13 11v6M19 11v6M25 11v6M31 11v6M37 11v6',
-      'M13 31v6M19 31v6M25 31v6M31 31v6M37 31v6',
-      'M21 19.5l7.5 4.5-7.5 4.5z',
-    ],
-    // A padlock, for the section that stays shut until a PIN opens it.
-    lock: [
-      'M12 21h24a3 3 0 0 1 3 3v15a3 3 0 0 1-3 3H12a3 3 0 0 1-3-3V24a3 3 0 0 1 3-3z',
-      'M16 21v-6a8 8 0 0 1 16 0v6',
-      'M24 29v6',
-    ],
-    grid: [
-      roundedSquare(7, 7, 14, 3),
-      roundedSquare(27, 7, 14, 3),
-      roundedSquare(7, 27, 14, 3),
-      roundedSquare(27, 27, 14, 3),
-    ],
-    building: [
-      'M5 42h38',
-      'M9 42V24h13v18',
-      'M12 28h7M12 32h7M12 36h7',
-      'M22 42V15l15-7v34',
-    ],
-    star: ['M24 7l5.2 10.6 11.7 1.7-8.5 8.2 2 11.6L24 33.6l-10.4 5.5 2-11.6-8.5-8.2 11.7-1.7z'],
-  };
-
-  for (const d of paths[name]) {
-    const el = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    el.setAttribute('d', d);
-    svg.append(el);
-  }
+  svg.innerHTML = (ICON_MARKUP[name] ?? ICON_MARKUP.star)();
   return svg;
 }
 
@@ -246,7 +263,8 @@ function paintBackground(
 export interface Tile {
   id: string;
   icon: IconName;
-  label: string;
+  /** 大字那一行的 i18n key。两行字都从它来。 */
+  key: string;
   go: () => void;
 }
 
@@ -313,19 +331,23 @@ export function launcherView(
             onclick: tile.go,
           },
           h('span', { class: 'tile-icon' }, icon(tile.icon)),
-          h('span', { class: 'tile-label', text: tile.label }),
+          /*
+           * 两行：上面英文，下面客人选的语言。
+           *
+           * 英文当标题，是因为在这类场所它是除了图标之外唯一人人认得出的一行；
+           * 客人本来就选了语言，第二行才是给他读的。客人选的就是英文时，
+           * 第二行没有意义，干脆不渲染 —— 不是渲染成空的，空元素照样占位置，
+           * 那一格的图标和字就会比旁边高一截。
+           */
+          h('span', { class: 'tile-label', text: tIn('en', tile.key) }),
+          lang() === 'en' ? null : h('span', { class: 'tile-sub', text: t(tile.key) }),
         ),
       ),
     ),
   );
-  // The sheen clips its own highlight so the band itself can stay unclipped -
-  // a focused tile lifts out of the band and needs its shadow intact.
-  const band = h(
-    'div',
-    { class: 'tile-band' },
-    h('span', { class: 'band-sheen', 'aria-hidden': 'true' }),
-    row,
-  );
+  // 条子只管自己那层毛玻璃。焦点那一格比它高，会冒到条子外面去，
+  // 所以这里不能裁剪内容 —— 样式表里也没给它 overflow。
+  const band = h('div', { class: 'tile-band' }, row);
 
   const photo = h('div', { class: 'launcher-photo' });
   const backdrop = h('div', { class: 'launcher-bg' }, photo);

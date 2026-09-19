@@ -616,6 +616,34 @@
       </section>
 
       <section>
+        <h2>旅游周边</h2>
+        <p class="hint">
+          酒店附近值得去的地方 —— 客人在电视首页那一格里看到的就是这张表。
+          <strong>一条就是一个去处：一张照片、名字、一段介绍。</strong>
+          英文名必填，其它语言留空会自动回退到英文；介绍最多 600 字，电视上一屏读得完。
+        </p>
+        <p class="hint">
+          <strong>没照片的条目电视上不出现</strong> —— 那一页是一墙大图卡片，没图就是一块空白。
+          照片先在上面「上传图片或视频」传进来，再到这一行的下拉里挑，或者直接填个 https 直链。
+          一条上架的都没有时，电视首页干脆不摆这一格，客人不会点进一片空白。
+        </p>
+        <div class="row" style="margin-bottom:10px">
+          <button class="primary" id="addSpot">＋ 加一个去处</button>
+        </div>
+        <div class="scroll">
+          <table class="tbl">
+            <thead>
+              <tr>
+                <th>照片</th><th>English *</th><th>中文</th><th>ខ្មែរ</th><th>Bahasa</th>
+                <th>介绍</th><th>排序</th><th>上架</th><th></th>
+              </tr>
+            </thead>
+            <tbody id="spotRows"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section>
         <h2>收款与计费</h2>
         <p class="hint">
           走 Jeepay。<strong>先填通道，再决定谁出钱。</strong>
@@ -1217,6 +1245,7 @@
         // arrives, and a slow roster must not hold up the settings above it.
         void loadRooms();
         void loadService();
+        void loadExplore();
         void loadPay();
         if (scope === 'platform') void loadProps();
       }
@@ -2472,6 +2501,170 @@
           draftItem = null;
           renderOrders();
           renderMenu();
+        } catch (e) {
+          toast(e.message, true);
+        }
+      }
+
+      // -------------------------------------------------------- 旅游周边
+
+      let spots = [];
+      let draftSpot = null;
+
+      /*
+       * 照片那一格：一个链接输入框 + 从已上传的素材里挑 + 一张小预览。
+       *
+       * 光给输入框是不行的 —— 没人抄得对 /media/8f3c…jpg 这种名字；
+       * 光给下拉也不行 —— 酒店常常直接甩来一个外链。预览是为了当场看出
+       * 填错没有，不然错误要等到客人在电视上看见空白才暴露。
+       */
+      function spotImage(value) {
+        const url = el('input', { type: 'text', value: value ?? '', placeholder: 'https:// 或在下面挑' });
+        url.style.width = '190px';
+
+        const preview = el('img');
+        preview.style.cssText =
+          'width:190px;height:107px;object-fit:cover;border-radius:6px;background:#0d1018;display:block;margin-bottom:6px';
+        const paint = () => {
+          const v = url.value.trim();
+          preview.hidden = !v;
+          if (v) preview.src = v;
+        };
+        paint();
+        url.oninput = paint;
+
+        const images = (state.media ?? []).filter((m) => m.kind !== 'video');
+        const pickEl = el('select');
+        pickEl.style.width = '190px';
+        pickEl.append(
+          el('option', { value: '', textContent: images.length ? '从素材里挑…' : '素材库还是空的' }),
+        );
+        for (const m of images) {
+          pickEl.append(el('option', { value: m.url, textContent: m.original || m.url }));
+        }
+        // 挑完把下拉复位：它是个动作，不是这一行的状态。
+        pickEl.onchange = () => {
+          if (!pickEl.value) return;
+          url.value = pickEl.value;
+          pickEl.value = '';
+          paint();
+        };
+
+        return { cell: el('td', null, preview, url, pickEl), read: () => url.value.trim() };
+      }
+
+      function spotRow(spot) {
+        const img = spotImage(spot.image);
+        const f = {};
+        const nameCell = (k, ph) => {
+          f[k] = el('input', { type: 'text', value: spot.name?.[k] ?? '', placeholder: ph || '' });
+          f[k].style.width = '120px';
+          return el('td', null, f[k]);
+        };
+
+        const d = {};
+        const descCell = el('td');
+        for (const [k, ph] of [
+          ['en', 'English 介绍'],
+          ['zh', '中文介绍'],
+          ['km', 'ខ្មែរ'],
+          ['id', 'Bahasa'],
+        ]) {
+          d[k] = el('textarea', { value: spot.desc?.[k] ?? '', placeholder: ph, rows: 2 });
+          d[k].style.cssText = 'width:240px;display:block;margin-bottom:4px';
+          descCell.append(d[k]);
+        }
+
+        const sort = el('input', { type: 'text', value: spot.sortOrder ?? 0 });
+        sort.style.width = '60px';
+        const active = el('input', { type: 'checkbox', checked: spot.active !== false });
+
+        const save = el('button', { className: 'primary', textContent: '保存' });
+        save.onclick = async () => {
+          save.disabled = true;
+          try {
+            const r = await api('/explore', {
+              method: 'POST',
+              body: JSON.stringify({
+                id: spot.id ?? undefined,
+                name: {
+                  en: f.en.value.trim(),
+                  zh: f.zh.value.trim(),
+                  km: f.km.value.trim(),
+                  id: f.id.value.trim(),
+                },
+                desc: { en: d.en.value, zh: d.zh.value, km: d.km.value, id: d.id.value },
+                image: img.read(),
+                sortOrder: Number(sort.value) || 0,
+                active: active.checked,
+              }),
+            });
+            spots = r.spots;
+            draftSpot = null;
+            renderSpots();
+            toast('已保存');
+          } catch (e) {
+            toast(e.message, true);
+          } finally {
+            save.disabled = false;
+          }
+        };
+
+        const acts = el('div', { className: 'acts' }, save);
+        if (spot.id) {
+          const drop = el('button', { className: 'danger', textContent: '删除' });
+          drop.onclick = async () => {
+            if (!confirm('删掉「' + (spot.name?.en || '') + '」？照片留在素材库里，不会一起删。')) return;
+            try {
+              const r = await api('/explore/' + spot.id, { method: 'DELETE' });
+              spots = r.spots;
+              renderSpots();
+              toast('已删除');
+            } catch (e) {
+              toast(e.message, true);
+            }
+          };
+          acts.append(drop);
+        }
+
+        return el(
+          'tr',
+          null,
+          img.cell,
+          nameCell('en', '必填'),
+          nameCell('zh'),
+          nameCell('km'),
+          nameCell('id'),
+          descCell,
+          el('td', null, sort),
+          el('td', null, active),
+          el('td', null, acts),
+        );
+      }
+
+      function renderSpots() {
+        const rows = spots.map(spotRow);
+        if (draftSpot) rows.unshift(spotRow(draftSpot));
+        $('spotRows').replaceChildren(
+          ...(rows.length
+            ? rows
+            : [el('tr', null, el('td', { colSpan: 9, className: 'hint', textContent: '还没填过周边。电视首页现在没有这一格。' }))]),
+        );
+      }
+
+      $('addSpot').onclick = () => {
+        // 新的一条排在最后：先填的先摆，跟前台脑子里的顺序一致。
+        const last = spots.length ? spots[spots.length - 1].sortOrder : 0;
+        draftSpot = { id: null, name: {}, desc: {}, image: '', sortOrder: (Number(last) || 0) + 1, active: true };
+        renderSpots();
+        $('spotRows').querySelector('input')?.focus();
+      };
+
+      async function loadExplore() {
+        try {
+          spots = (await api('/explore')).spots;
+          draftSpot = null;
+          renderSpots();
         } catch (e) {
           toast(e.message, true);
         }

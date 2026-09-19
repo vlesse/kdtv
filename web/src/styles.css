@@ -1561,57 +1561,49 @@ img {
 /* --------------------------------------------------------------- tiles */
 
 /*
- * The band the tiles sit in.
+ * 底部导航条。
  *
- * It does two jobs: it groups the four destinations into one object instead of
- * four things floating on a photo, and it is what makes their labels readable
- * over whatever the property uploaded. Edge to edge, fading out at both ends
- * so it belongs to the picture rather than covering it.
+ * 照着批过的那张设计稿一比一做的：一条压在照片上的毛玻璃横条，每格一个图标、
+ * 一行英文、一行客人自己选的语言；焦点那一格是奶白描边的圆角块，比横条高出
+ * 一截，像从条子里抬起来。
+ *
+ * **所有尺寸都从 `--u` 推出来**。`--u` 就是稿子里一格的宽度（1266 宽的稿上是
+ * 163px），其余每个数字都是它的定比。这么写不是为了省事 —— 每处各写一个
+ * clamp，1366 的老电视和 1920 的盒子上就会各自缩成另一副样子，比例全变；
+ * 一个变量推下去，宽屏窄屏看到的都还是批过的那张图。
  */
 .tile-band {
+  --u: clamp(9rem, 12.88vw, 17rem);
   position: relative;
   z-index: 1;
-  margin-bottom: clamp(1.5rem, 7vh, 5rem);
-  padding: clamp(0.8rem, 1.8vh, 1.8rem) 0;
-  overflow: hidden;
+  /* 稿子里条子下面还留 18px（18/163）。电视四边本来就会被裁掉一点，
+     这点余量正好当安全边。 */
+  margin-bottom: calc(var(--u) * 0.11);
+  height: var(--u);
   background: linear-gradient(
-    90deg,
-    rgba(12, 13, 16, 0.52) 0%,
-    rgba(20, 22, 26, 0.54) 14%,
-    rgba(40, 43, 48, 0.46) 50%,
-    rgba(20, 22, 26, 0.54) 86%,
-    rgba(12, 13, 16, 0.52) 100%
+    180deg,
+    rgba(58, 74, 84, 0.34) 0%,
+    rgba(34, 42, 48, 0.48) 58%,
+    rgba(22, 27, 31, 0.56) 100%
   );
-  backdrop-filter: blur(4px);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-top: 1px solid rgba(255, 255, 255, 0.09);
 }
 
-.tile-band::before {
-  content: '';
+/*
+ * 格子比条子高，往上冒出去一截 —— 所以从条子底边往上排，**条子不能裁自己的
+ * 内容**，冒出去的那截是落在照片上的。
+ */
+.tiles {
   position: absolute;
-  top: 0;
   left: 0;
   right: 0;
-  height: 1px;
-  background: linear-gradient(
-    90deg,
-    rgba(255, 255, 255, 0) 0%,
-    rgba(255, 255, 255, 0.14) 24%,
-    rgba(255, 255, 255, 0.28) 50%,
-    rgba(255, 255, 255, 0.14) 76%,
-    rgba(255, 255, 255, 0) 100%
-  );
-}
-
-.tiles {
-  position: relative;
-  z-index: 1;
-  /* Auto columns rather than a hard-coded four, so the row still divides
-     evenly if a property ever gets a fifth destination. */
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: 1fr;
-  align-items: end;
-  padding: 0 clamp(1rem, 3.5vw, 5rem);
+  bottom: calc(var(--u) * 0.018);
+  height: calc(var(--u) * 1.08);
+  display: flex;
+  justify-content: center;
+  align-items: stretch;
 }
 
 .tile-slot {
@@ -1619,27 +1611,36 @@ img {
   justify-content: center;
 }
 
+/*
+ * 每格宽度固定、整排居中，不是按格数均分。
+ *
+ * 均分的话，开了成人频道的房间七格、没开的六格，同一家酒店两个房间的
+ * 导航条宽窄不一样 —— 客人换个房间会觉得是两套系统。
+ */
 .tile {
+  box-sizing: border-box;
+  width: var(--u);
+  padding: 0;
   background: transparent;
-  border: 2px solid transparent;
-  border-radius: clamp(0.6rem, 0.9vw, 1.1rem);
-  color: #fff;
+  border: calc(var(--u) * 0.0147) solid transparent;
+  border-radius: 0;
+  color: #fbfeff;
   font-family: inherit;
   cursor: pointer;
-  padding: clamp(0.8rem, 1.4vw, 1.6rem) clamp(1rem, 1.8vw, 2rem);
-  width: 100%;
-  max-width: clamp(8rem, 15vw, 18rem);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: clamp(0.5rem, 0.9vw, 1rem);
-  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.55);
+  -webkit-font-smoothing: antialiased;
+  /* 稿子是在一张暗照片上做的。真机上酒店传什么照片都有可能，给白字留一点
+     压边，撞上亮色的天空才不至于看不见。 */
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
 }
 
 .tile-icon {
   display: block;
-  width: clamp(3rem, 5.6vw, 6.2rem);
-  height: clamp(3rem, 5.6vw, 6.2rem);
+  width: calc(var(--u) * 0.393);
+  height: calc(var(--u) * 0.393);
+  margin-top: calc(var(--u) * 0.233);
 }
 
 .tile-icon svg {
@@ -1647,38 +1648,86 @@ img {
   height: 100%;
 }
 
+/* 英文那一行。Roboto Light —— 安卓电视上它就是系统字，不用下载任何东西。 */
 .tile-label {
-  font-size: clamp(1rem, 1.85vw, 2.1rem);
-  font-weight: 600;
+  margin-top: calc(var(--u) * 0.0675);
+  font-family: Roboto, system-ui, sans-serif;
+  font-weight: 300;
+  font-size: calc(var(--u) * 0.129);
+  line-height: 1;
   white-space: nowrap;
 }
 
-/* Focus is a filled panel and a small lift rather than the global scale-up:
-   the tiles are large enough that growing one reads as clumsy. */
+/*
+ * 第二行是客人选的那种语言：小一号、灰一点。
+ *
+ * letter-spacing 撑开一点，是因为高棉文和中文挤在一起隔着几米认不出来；
+ * text-indent 补的是 letter-spacing 拖在最后一个字后面的那点空 ——
+ * 不补整行就偏左半个字。
+ */
+.tile-sub {
+  margin-top: calc(var(--u) * 0.031);
+  font-weight: 300;
+  font-size: calc(var(--u) * 0.098);
+  line-height: 1;
+  letter-spacing: calc(var(--u) * 0.0061);
+  text-indent: calc(var(--u) * 0.0061);
+  white-space: nowrap;
+  color: #a0a7ab;
+}
+
+/*
+ * 焦点：奶白描边的圆角块。
+ *
+ * 不放大、不位移 —— 格子本来就大，整格放大读起来笨。变的是图标和两行字各自
+ * 大一点、往上收一点，看上去就是这一格抬起来了。
+ *
+ * 这几样变的是尺寸，**故意不做过渡**：遥控按一下就要有反应，尺寸做补间等于
+ * 让这台 1G 内存的盒子每按一次键重排十几帧。颜色和底色才走过渡。
+ */
 .tile.focusable {
   transition:
     background 0.18s ease,
     border-color 0.18s ease,
     box-shadow 0.18s ease,
-    transform 0.2s cubic-bezier(0.2, 0.8, 0.3, 1.3);
+    color 0.18s ease;
 }
 
 .tile.focusable:focus {
-  background: linear-gradient(160deg, rgba(74, 156, 224, 0.93), rgba(34, 100, 176, 0.93));
-  border-color: rgba(205, 233, 255, 0.95);
+  background: linear-gradient(
+    180deg,
+    rgba(96, 98, 95, 0.6) 0%,
+    rgba(54, 54, 51, 0.68) 46%,
+    rgba(25, 24, 22, 0.74) 100%
+  );
+  border-color: #f3e3cd;
+  border-radius: calc(var(--u) * 0.098);
   box-shadow:
-    0 12px 30px rgba(0, 0, 0, 0.45),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+    0 0 16px rgba(243, 227, 205, 0.26),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  color: #f3e3cd;
   text-shadow: none;
-  transform: translateY(-0.5rem);
-}
-
-.tile-icon {
-  transition: transform 0.24s cubic-bezier(0.2, 0.8, 0.3, 1.35);
+  /* 全局的 .focusable:focus 会放大 1.06 并描一圈白边，这里两样都要盖掉。 */
+  transform: none;
 }
 
 .tile.focusable:focus .tile-icon {
-  transform: translateY(-2px) scale(1.07);
+  width: calc(var(--u) * 0.442);
+  height: calc(var(--u) * 0.442);
+  margin-top: calc(var(--u) * 0.135);
+}
+
+.tile.focusable:focus .tile-label {
+  margin-top: calc(var(--u) * 0.092);
+  font-size: calc(var(--u) * 0.141);
+}
+
+.tile.focusable:focus .tile-sub {
+  margin-top: calc(var(--u) * 0.0368);
+  font-size: calc(var(--u) * 0.11);
+  letter-spacing: calc(var(--u) * 0.0074);
+  text-indent: calc(var(--u) * 0.0074);
+  color: #f3e3cd;
 }
 
 /* ---------------------------------------------------------- animation */
@@ -1687,53 +1736,12 @@ img {
  * Motion on the launcher is deliberately small and slow.
  *
  * This screen is on for hours in a room somebody is living in, so anything
- * that loops has to be ignorable - the picture drifts, the band catches a
- * highlight now and then, and that is the whole budget. Everything animated
+ * that loops has to be ignorable - the picture drifts, and that is the whole
+ * budget. Everything animated
  * here moves `transform` or `opacity` only, which the compositor handles
  * without repainting, because the hardware this runs on is a 1 GB Android box
  * and not a phone.
  */
-
-.band-sheen {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  pointer-events: none;
-}
-
-/* The band's lower edge. Paired with ::before above it, the two hairlines are
-   what turn a tint into a bar the four tiles sit inside. */
-.band-sheen::before {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: linear-gradient(
-    90deg,
-    rgba(255, 255, 255, 0) 0%,
-    rgba(255, 255, 255, 0.1) 26%,
-    rgba(255, 255, 255, 0.2) 50%,
-    rgba(255, 255, 255, 0.1) 74%,
-    rgba(255, 255, 255, 0) 100%
-  );
-}
-
-.band-sheen::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 42%;
-  background: linear-gradient(
-    100deg,
-    rgba(255, 255, 255, 0) 0%,
-    rgba(255, 255, 255, 0.1) 50%,
-    rgba(255, 255, 255, 0) 100%
-  );
-  transform: translate3d(-140%, 0, 0);
-}
 
 /*
  * Deliberately tiny.
@@ -1795,16 +1803,6 @@ img {
   }
 }
 
-@keyframes band-sweep {
-  0%,
-  62% {
-    transform: translate3d(-140%, 0, 0);
-  }
-  100% {
-    transform: translate3d(340%, 0, 0);
-  }
-}
-
 @media (prefers-reduced-motion: no-preference) {
   /* A slow drift across the still. Long enough that a guest never catches it
      starting, and it alternates so there is no jump back to the first frame. */
@@ -1831,10 +1829,6 @@ img {
   .lb-clock,
   .lb-right {
     animation: fade-in 0.7s ease-out both 0.35s;
-  }
-
-  .band-sheen::after {
-    animation: band-sweep 11s ease-in-out infinite 2.5s;
   }
 }
 
@@ -1901,6 +1895,87 @@ img {
   margin: 0 0 1.5rem;
 }
 
+/* ------------------------------------------------------------ 旅游周边 */
+
+/* 比菜单那些格子大一截：这一屏卖的是照片，字只是注解。 */
+.spots {
+  grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr));
+  margin-bottom: 1.5rem;
+}
+
+.spot {
+  display: block;
+  padding: 0;
+  overflow: hidden;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  cursor: pointer;
+  font-family: inherit;
+  color: inherit;
+  text-align: left;
+}
+
+/* 图位先占好格子再等图到 —— 不然一屏卡片会在照片陆续加载时跳来跳去。 */
+.spot-art {
+  display: block;
+  aspect-ratio: 16 / 9;
+  background: #0d1018;
+}
+
+.spot-art img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.spot-meta {
+  display: block;
+  padding: 0.7rem 0.9rem 0.9rem;
+}
+
+.spot-name {
+  display: block;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.spot-sub {
+  display: block;
+  margin: 0.15rem 0 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.spot-page {
+  padding: 0 var(--safe-x) var(--safe-y);
+  max-width: 58rem;
+}
+
+.spot-hero {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: var(--radius);
+  background: #0d1018;
+}
+
+.spot-title {
+  margin: 1rem 0 0;
+  font-size: clamp(1.3rem, 2vw, 1.9rem);
+}
+
+/* 介绍里前台是按行敲的地址和营业时间，换行要留着；行距放宽一点，
+   这是隔着几米读的字。 */
+.spot-body {
+  margin: 0.8rem 0 1.2rem;
+  white-space: pre-wrap;
+  line-height: 1.65;
+  color: var(--text);
+}
+
 @media (max-width: 900px) {
   .launcher-bar {
     height: auto;
@@ -1913,13 +1988,18 @@ img {
   .lb-right {
     margin-left: 0;
   }
-  .tiles {
-    flex-wrap: wrap;
-    gap: 1rem;
+  /* 窄屏（在浏览器里调试时才会遇到）：`--u` 一改，整条按比例缩，
+     七格也排得下，不用另写一套尺寸。 */
+  .tile-band {
+    --u: 6.5rem;
+    height: auto;
+    padding: calc(var(--u) * 0.06) 0;
   }
-  .tile {
-    min-width: 6.5rem;
-    padding: 0.8rem 1rem;
+  .tiles {
+    position: static;
+    height: auto;
+    flex-wrap: wrap;
+    gap: calc(var(--u) * 0.06);
   }
 }
 
