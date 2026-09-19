@@ -351,6 +351,14 @@ export const api = {
       body: JSON.stringify({ deviceId: deviceId(), mac: deviceMac() }),
     }),
 
+  /** 权限和房间的当前状态。**不会动「最后开机」那一列**，见服务端那条注释。 */
+  deviceState: () =>
+    req<{
+      adultAvailable: boolean;
+      exploreAvailable: boolean;
+      room: { id: string; guestName: string | null; building: string | null } | null;
+    }>('/api/device/state'),
+
   channels: () => req<{ categories: Category[]; channels: Channel[] }>('/api/channels'),
 
   epg: (streamId: number) => req<{ listings: EpgEntry[] }>(`/api/epg/${streamId}`),

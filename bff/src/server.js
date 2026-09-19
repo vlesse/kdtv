@@ -205,6 +205,34 @@ app.post('/api/adult/lock', async (req, reply) => {
 
 // ---------------------------------------------------------------- content
 
+/**
+ * 这台盒子此刻的权限和房间。
+ *
+ * 和 `hello` 的区别是**它不动 `last_seen`**。后台设备表那一列写的是
+ * 「最后开机」，靠的就是 hello 一次开机只来一趟；首页每分钟问一次，
+ * 要是问的是 hello，那一列就变成了「一分钟前」，等于把这个信息毁掉。
+ *
+ * 为什么首页要反复问：能不能看成人区、有没有周边、客人叫什么，
+ * 全是前台在后台随时会改的东西。不问的话前台勾完得让客人把电视拔了重插。
+ */
+app.get('/api/device/state', async (req, reply) => {
+  const dev = requireLine(req, reply);
+  if (!dev) return;
+
+  const room =
+    dev.room_id && dev.property_id
+      ? db
+          .prepare('SELECT * FROM rooms WHERE property_id = ? AND room_id = ?')
+          .get(dev.property_id, dev.room_id)
+      : null;
+
+  return {
+    adultAvailable: adult.status(dev).available,
+    exploreAvailable: dev.property_id != null ? explore.any(dev.property_id) : false,
+    room: room ? { id: room.room_id, guestName: room.guest_name, building: room.building } : null,
+  };
+});
+
 app.get('/api/channels', async (req, reply) => {
   const dev = requireLine(req, reply);
   if (!dev) return;

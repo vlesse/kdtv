@@ -451,32 +451,56 @@ function showPortalHome() {
 
   const root = launcherView(session, tiles, showLangPicker);
   mount(root);
+  watchEntitlements(root);
+}
 
-  /*
-   * 回到首页时悄悄再问一次服务端。
-   *
-   * 「这个房间能不能看成人区」「这家酒店填周边了没有」「客人叫什么名字」——
-   * 这几件事**只在开机那一次 hello 里发过一次**。前台在后台勾完，电视上要
-   * 等到下次开机才认，而前台看到的是「我勾了，它没反应」，然后去拔电源。
-   *
-   * 所以每次回到首页问一次（一个很小的请求），**只有真的变了才重画** ——
-   * 无条件重画会把焦点弹回第一格，客人按着遥控器的手会觉得屏幕在跟他抢。
-   */
-  const before = JSON.stringify([adultAvailable, exploreAvailable, session?.room?.id ?? null]);
-  void api
-    .hello()
-    .then((fresh) => {
-      if (!fresh.activated) return;
-      session = fresh;
+/**
+ * 首页开着的时候，盯着服务端那几件会变的事。
+ *
+ * 「这个房间能不能看成人区」「这家酒店填周边了没有」「客人叫什么名字」——
+ * 原来**只在开机那一次 hello 里发过一次**。前台在后台勾完，电视上要等到
+ * 下次开机才认；前台看到的是「我勾了，它没反应」，接着就去拔电源了。
+ *
+ * 所以进首页问一次，之后每分钟问一次，盒子被切回 HDMI（`visibilitychange`）
+ * 也问一次。**只有真的变了才重画** —— 无条件重画会把焦点弹回第一格，
+ * 客人正按着遥控器的手会觉得屏幕在跟他抢。
+ *
+ * 看门狗跟着这一屏活：`mount` 换屏时会派发 `remove-hook`，定时器在那里停掉，
+ * 所以看电影的时候没有任何东西在后台轮询。
+ */
+const ENTITLEMENT_POLL_MS = 60_000;
+
+function watchEntitlements(root: HTMLElement) {
+  let stopped = false;
+
+  const tick = async () => {
+    if (stopped || !root.isConnected) return;
+    const before = JSON.stringify([adultAvailable, exploreAvailable, session?.room?.id ?? null]);
+    try {
+      const fresh = await api.deviceState();
       adultAvailable = Boolean(fresh.adultAvailable);
       exploreAvailable = Boolean(fresh.exploreAvailable);
-      const after = JSON.stringify([adultAvailable, exploreAvailable, session?.room?.id ?? null]);
-      // 人已经点进别的屏幕了就不管 —— 往一个扔掉的首页上重画没有意义。
-      if (after !== before && root.isConnected) showPortalHome();
-    })
-    .catch(() => {
-      /* 问不到就算了，首页上现成的那份照常用 */
-    });
+      if (session) session = { ...session, room: fresh.room };
+    } catch {
+      return; // 网络不好就下一分钟再说，首页上现成的那份照常用
+    }
+    const after = JSON.stringify([adultAvailable, exploreAvailable, session?.room?.id ?? null]);
+    if (after !== before && root.isConnected) showPortalHome();
+  };
+
+  const timer = window.setInterval(tick, ENTITLEMENT_POLL_MS);
+  const onVisible = () => {
+    if (!document.hidden) void tick();
+  };
+  document.addEventListener('visibilitychange', onVisible);
+
+  root.addEventListener('remove-hook', () => {
+    stopped = true;
+    clearInterval(timer);
+    document.removeEventListener('visibilitychange', onVisible);
+  });
+
+  void tick();
 }
 
 // ------------------------------------------------- 模板 B：直播优先
