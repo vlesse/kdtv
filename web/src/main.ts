@@ -39,6 +39,36 @@ let adultAvailable = false;
 /** 这家酒店填了周边内容没有。同样是服务端说了算。 */
 let exploreAvailable = false;
 
+/*
+ * 片库到了没有。
+ *
+ * **首页不等它。** 这一条接口要把面板上的电影、剧集和两套分类都拉回来，
+ * 九百多条，实测两秒上下；开机时等它等于让客人对着一块黑屏多待两秒，
+ * 而首页上有五格跟片库毫无关系。所以开机只是把它踢出去跑，
+ * 点播那一格自己负责「还没到」这件事。
+ */
+let vodReady = false;
+let vodPending: Promise<void> | null = null;
+
+function loadVod(): Promise<void> {
+  vodPending ??= api
+    .vod()
+    .then((vod) => {
+      vodItems = vod.items;
+      vodCategories = vod.categories;
+    })
+    .catch((err) => {
+      // 失败也算「到了」：点进去看到的是「暂无影片」，不是一个永远转下去的圈。
+      // 下次开机、或者解锁成人区时会再取一次。
+      console.error(err);
+    })
+    .finally(() => {
+      vodReady = true;
+      vodPending = null;
+    });
+  return vodPending;
+}
+
 /**
  * 这家酒店用哪一套电视界面，后台定的（见 bff/src/settings.js）。
  *
@@ -372,15 +402,8 @@ async function boot() {
     console.error(err);
   }
 
-  // The catalogue is optional: a panel with nothing collected yet still has
-  // live TV, and that must not be held up by a VOD request.
-  try {
-    const vod = await api.vod();
-    vodItems = vod.items;
-    vodCategories = vod.categories;
-  } catch (err) {
-    console.error(err);
-  }
+  // 片库在后台取，不挡首页 —— 见 loadVod()。
+  void loadVod();
 
   showHome();
 }
@@ -500,7 +523,8 @@ function openLiveFirstMenu(host: HTMLElement) {
   const entries: MenuEntry[] = [];
 
   // 片库是空的就不摆这一格 —— 点进去是空屏，不如没有。
-  if (vodItems.some((i) => !i.adult)) {
+  // **还没取回来的时候当它有**：这会儿藏起来，两秒后它又冒出来，更奇怪。
+  if (!vodReady || vodItems.some((i) => !i.adult)) {
     entries.push({ id: 'vod', icon: 'film', label: t('tile.vod'), go: showVod });
   }
   entries.push({ id: 'service', icon: 'grid', label: t('tile.service'), go: showService });
@@ -797,6 +821,30 @@ function showVod() {
     showHome();
     return true;
   });
+  rerender = showVod;
+
+  /*
+   * 片库还在路上：先把这一屏亮出来。
+   *
+   * 关键是**按下去立刻换屏**。客人分不清「在加载」和「没按上」，分不清就会
+   * 连按 —— 这正是原来那五六秒里发生的事。到了之后自己重画一遍，
+   * 除非客人已经走了（screen 不在文档里了就不画，别往一个扔掉的屏幕上画）。
+   */
+  if (!vodReady) {
+    const waiting = h(
+      'div',
+      { class: 'screen vod' },
+      scenery('vod'),
+      subHeader(t('tile.vod')),
+      h('div', { class: 'body' }, h('div', { class: 'centre' }, h('p', { class: 'muted', text: t('vod.loading') }))),
+    );
+    mount(waiting);
+    focusFirst(waiting);
+    void loadVod().then(() => {
+      if (waiting.isConnected) showVod();
+    });
+    return;
+  }
 
   const body = h('div', { class: 'body' });
 
@@ -867,7 +915,6 @@ function showVod() {
 
   drain(queue);
 
-  rerender = showVod;
   const head = subHeader(t('tile.vod'));
   // 搜索入口放在标题栏右边、房间号左边 —— 进点播页第一眼就在，
   // 不用先往下翻过几排海报才发现有搜索。
@@ -993,13 +1040,10 @@ async function reloadCatalogue() {
   } catch (err) {
     console.error(err);
   }
-  try {
-    const vod = await api.vod();
-    vodItems = vod.items;
-    vodCategories = vod.categories;
-  } catch (err) {
-    console.error(err);
-  }
+  // 解锁之后片库的内容不一样了，必须重新取 —— 把记忆化那份作废。
+  vodPending = null;
+  vodReady = false;
+  await loadVod();
 }
 
 /**

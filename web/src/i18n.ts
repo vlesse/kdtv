@@ -111,6 +111,7 @@ const zh: Dict = {
 
   'vod.emptyTitle': '暂无影片',
   'vod.emptyBody': '管理员添加片源后，这里就会出现。',
+  'vod.loading': '正在载入片库…',
   'vod.titles': '{n} 部',
   'vod.play': '播放',
   'vod.resume': '继续播放 {t}',
@@ -264,6 +265,7 @@ const en: Dict = {
 
   'vod.emptyTitle': 'No titles yet',
   'vod.emptyBody': 'The catalogue appears once an operator adds it.',
+  'vod.loading': 'Loading the catalogue…',
   'vod.titles': '{n} titles',
   'vod.play': 'Play',
   'vod.resume': 'Resume {t}',
@@ -417,6 +419,7 @@ const km: Dict = {
 
   'vod.emptyTitle': 'មិនទាន់មានភាពយន្ត',
   'vod.emptyBody': 'បញ្ជីនឹងបង្ហាញ បន្ទាប់ពីអ្នកគ្រប់គ្រងបានបញ្ចូល។',
+  'vod.loading': 'កំពុងផ្ទុកបញ្ជីភាពយន្ត…',
   'vod.titles': '{n} រឿង',
   'vod.play': 'ចាក់',
   'vod.resume': 'បន្ត {t}',
@@ -566,6 +569,7 @@ const id: Dict = {
 
   'vod.emptyTitle': 'Belum ada film',
   'vod.emptyBody': 'Katalog akan muncul setelah pengelola menambahkannya.',
+  'vod.loading': 'Memuat katalog…',
   'vod.titles': '{n} judul',
   'vod.play': 'Putar',
   'vod.resume': 'Lanjutkan {t}',
