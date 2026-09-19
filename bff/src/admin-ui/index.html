@@ -77,6 +77,50 @@
       header .sub { color: var(--muted); font-size: 13px; }
       header .right { margin-left: auto; }
 
+      /* 筛选块。一个下拉要点两下才知道里面有什么，而这几个条件是这一页
+         每天都要来回切的 —— 摆在外面，顺带把数目写在上面。 */
+      .chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+      .chip {
+        display: flex; align-items: center; gap: 6px;
+        padding: 6px 12px; border-radius: 999px; font: inherit; cursor: pointer;
+        border: 1px solid var(--line); background: #11161d; color: var(--muted);
+      }
+      .chip:hover { border-color: #3d444d; }
+      .chip.on { background: #16243a; border-color: var(--accent); color: #fff; }
+      .chip b { font-weight: 600; opacity: .7; }
+      .chip.on b { opacity: 1; }
+
+      /* 总览的数字卡 */
+      .stats {
+        display: grid; grid-template-columns: repeat(auto-fit, minmax(186px, 1fr));
+        gap: 14px; margin-bottom: 18px;
+      }
+      .stat {
+        text-align: left; font: inherit; color: inherit; cursor: pointer;
+        background: var(--panel); border: 1px solid var(--line);
+        border-radius: 10px; padding: 15px 17px;
+      }
+      .stat:hover { border-color: #3d444d; }
+      .stat .k { color: var(--muted); font-size: 12.5px; }
+      .stat .n { font-size: 26px; font-weight: 700; line-height: 1.25; margin-top: 2px; }
+      .stat .s { color: var(--muted); font-size: 12px; margin-top: 4px; }
+
+      /* 待办。一条一句话，右边一个直接跳过去的按钮 —— 说了问题不给路，
+         等于让人自己再找一遍。 */
+      .todo { display: flex; align-items: flex-start; gap: 10px; padding: 11px 0; border-top: 1px solid var(--line); }
+      .todo:first-child { border-top: 0; padding-top: 0; }
+      .todo .dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 7px; flex: none; }
+      .todo .dot.bad { background: var(--danger); }
+      .todo .dot.warn { background: #d29922; }
+      .todo .dot.ok { background: var(--ok); }
+      .todo .txt { min-width: 0; }
+      .todo .txt small { display: block; color: var(--muted); font-size: 12px; }
+      .todo .go { margin-left: auto; flex: none; }
+
+      .facts { display: grid; grid-template-columns: max-content 1fr; gap: 7px 20px; margin: 0; font-size: 13px; }
+      .facts dt { color: var(--muted); }
+      .facts dd { margin: 0; }
+
       .page { display: none; }
       .page.on { display: block; }
 
@@ -279,6 +323,7 @@
         <div class="brand">KDTV 后台</div>
         <select id="propPick" hidden></select>
         <div class="grp">运营</div>
+        <button class="navi" data-page="overview">总览</button>
         <button class="navi" data-page="rooms">房间与设备</button>
         <button class="navi" data-page="service">客房服务<span class="badge" id="navSvcBadge" hidden></span></button>
         <button class="navi" data-page="explore">旅游周边</button>
@@ -302,6 +347,23 @@
           <span class="sub" id="stat"></span>
         </header>
 
+      <div class="page" id="page-overview">
+      <div class="stats" id="ovStats"></div>
+
+      <section>
+        <h2>要处理的事</h2>
+        <p class="hint">
+          只列真的需要有人动手的。这一栏空着是正常状态，不是没读出来。
+        </p>
+        <div id="ovTodo"></div>
+      </section>
+
+      <section>
+        <h2>这家酒店现在是什么样</h2>
+        <dl class="facts" id="ovFacts"></dl>
+      </section>
+      </div>
+
       <div class="page" id="page-rooms">
       <section>
         <h2>房间与设备</h2>
@@ -323,15 +385,11 @@
 
         <div class="row" style="margin-bottom: 12px">
           <input id="roomSearch" type="text" placeholder="搜房间号 / 备注 / 客人 / 设备号" style="flex:1;min-width:180px" />
-          <select id="roomFilter">
-            <option value="all">全部</option>
-            <option value="unassigned">未分房</option>
-            <option value="unbound">待配对</option>
-            <option value="checkedin">已入住</option>
-          </select>
           <button id="reloadRooms">刷新</button>
           <span class="hint" style="margin:0" id="roomStat"></span>
         </div>
+
+        <div class="chips" id="roomChips"></div>
 
         <div class="scroll">
           <table class="tbl">
@@ -1146,6 +1204,7 @@
         $('propertyName').value = state.home.propertyName || '';
         $('supportContact').value = state.home.supportContact || '';
         renderAdult();
+        renderOverview();
       }
 
       /* The restricted section.
@@ -1326,6 +1385,140 @@
         } catch (e) {
           toast(e.message, true);
         }
+      }
+
+      /* ------------------------------------------------------------ 总览
+
+       * 进后台第一眼。
+       *
+       * **没有新接口**：这一页上的每个数字都来自别的页本来就要读的那几份
+       * 数据（state / roster / 订单 / 周边 / 收款）。所以它不会拖慢登录，
+       * 也不会出现「总览说有三单、点进去是两单」这种两套口径。
+       *
+       * 谁先更新就先画谁，各条独立判断有没有数据 —— 刚登录那一两秒里，
+       * 有的还没回来，那几格就先空着，不能因此整页不画。
+       */
+      function renderOverview() {
+        if (!$('page-overview')) return;
+
+        const devices = roster?.devices ?? [];
+        const rooms = roster?.rooms ?? [];
+        const orders = svc?.orders ?? [];
+        // 待处理的数目用服务端算好的那个 —— 这一页和客房服务那一页必须同一个口径。
+        const pending = svc?.pending ?? 0;
+        const stale = devices.filter(
+          (d) => Boolean(d.lastSeen) && Date.now() / 1000 - d.lastSeen > STALE_DAYS * 86400,
+        ).length;
+        const unbound = devices.filter((d) => !d.bound).length;
+        const assigned = devices.filter((d) => d.roomId).length;
+        const live = spots.filter((x) => x.active && x.image).length;
+
+        // -------------------------------------------------------- 数字卡
+        const card = (kicker, n, sub, page) => {
+          const b = el('button', { className: 'stat' });
+          b.append(
+            el('div', { className: 'k', textContent: kicker }),
+            el('div', { className: 'n', textContent: String(n) }),
+            el('div', { className: 's', textContent: sub }),
+          );
+          b.onclick = () => showPage(page);
+          return b;
+        };
+
+        $('ovStats').replaceChildren(
+          card('盒子', devices.length, assigned + ' 台已分房', 'rooms'),
+          card('已入住', rooms.filter((r) => r.checkedIn).length, '共 ' + rooms.length + ' 个房间', 'rooms'),
+          card('待处理订单', pending, orders.length + ' 单在册', 'service'),
+          card('旅游周边', live, spots.length ? spots.length + ' 条在表里' : '还没填', 'explore'),
+        );
+
+        // ---------------------------------------------------------- 待办
+        const todo = [];
+        const add = (level, text, note, page, action) => {
+          const row = el('div', { className: 'todo' });
+          const txt = el('div', { className: 'txt' });
+          txt.append(el('span', { textContent: text }));
+          if (note) txt.append(el('small', { textContent: note }));
+          const go = el('button', { className: 'go', textContent: action || '去处理' });
+          go.onclick = () => showPage(page);
+          row.append(el('span', { className: 'dot ' + level }), txt, go);
+          todo.push(row);
+        };
+
+        if (pending) {
+          add('bad', pending + ' 单还没处理', '客人在房间里等着', 'service', '去看单');
+        }
+        if (unbound) {
+          add('warn', unbound + ' 台盒子还没分房', '填上房间号就能用，不用去盒子上操作', 'rooms');
+        }
+        if (stale) {
+          add(
+            'warn',
+            stale + ' 台电视超过 ' + STALE_DAYS + ' 天没开过机',
+            '可能是空房，也可能是电源被拔了 —— 值得让客房去看一眼',
+            'rooms',
+          );
+        }
+        if (svc?.money && !svc.money.ok) {
+          add('bad', '菜单币种和收款币种对不上', svc.money.reason + '。这期间客人下单不会出收款码', 'service');
+        }
+        if (state?.adult?.enabled && !state.adult.rooms.some((r) => r.allowed)) {
+          add('warn', '成人板块开着，但一个房间都没授权', '没授权的房间连图标都看不到，等于开了个空板块', 'adult');
+        }
+        if (state?.adult?.enabled && !state.adult.picked.length) {
+          add('bad', '成人板块开着，但一个分类都没勾', '没勾的分类会照常发给所有房间', 'adult');
+        }
+        if (payData?.billing?.mode !== 'off' && payData && !payData.channel?.ready) {
+          add('bad', '计费开着，但收款通道没配全', '客人点了付费内容会拿不到收款码', 'pay');
+        }
+        if (state && !state.home?.background?.url && !state.envBackgroundUrl) {
+          add('warn', '首页还没设背景', '现在电视上是内置渐变', 'look', '去设置');
+        }
+        if (state?.property && !state.property.hasLogin) {
+          add(
+            'warn',
+            '这家酒店还没有自己的前台口令',
+            '前台现在只能用平台总口令登录，等于把所有酒店的后台给了他',
+            'props',
+          );
+        }
+
+        $('ovTodo').replaceChildren(
+          ...(todo.length
+            ? todo
+            : [
+                (() => {
+                  const row = el('div', { className: 'todo' });
+                  row.append(
+                    el('span', { className: 'dot ok' }),
+                    el('div', { className: 'txt', textContent: '没有要处理的。' }),
+                  );
+                  return row;
+                })(),
+              ]),
+        );
+
+        // ---------------------------------------------------------- 现状
+        const facts = [];
+        const fact = (k, v) => {
+          facts.push(el('dt', { textContent: k }), el('dd', { textContent: v }));
+        };
+        if (state?.property) {
+          fact('酒店', state.property.name);
+          fact(
+            '线路',
+            (state.property.line || '默认线路') +
+              (state.property.usesDefaultLine ? '（跟平台默认）' : '') +
+              ' · 面板 ' + (state.property.panelName || '默认'),
+          );
+        }
+        fact('电视界面', state?.home?.tv?.template === 'live' ? '直播优先（开机就是电视）' : '首页启动器');
+        fact('成人板块', state?.adult?.enabled
+          ? '开 · 已授权 ' + state.adult.rooms.filter((r) => r.allowed).length + ' 间'
+          : '关');
+        fact('收款', payData?.channel?.ready ? '已开启 · ' + payData.channel.currency : '未开启');
+        fact('素材', (state?.media?.length ?? 0) + ' 个文件');
+        $('ovFacts').replaceChildren(...facts);
       }
 
       // ------------------------------------------------------------ actions
@@ -1652,6 +1845,7 @@
        * 以后加板块时全部错位。
        */
       const PAGE_NAMES = {
+        overview: '总览',
         rooms: '房间与设备',
         service: '客房服务',
         explore: '旅游周边',
@@ -1673,7 +1867,7 @@
 
       function showPage(name) {
         // 地址栏里可能是任何东西（手输、旧书签、平台页但现在是酒店管理员）。
-        if (!pageOpen(name)) name = 'rooms';
+        if (!pageOpen(name)) name = 'overview';
         page = name;
 
         for (const el of document.querySelectorAll('.page')) {
@@ -2353,8 +2547,44 @@
         return r;
       }
 
+      /*
+       * 房间页的筛选条件。
+       *
+       * 「很久没开机」用的是 last_seen，而那是**开机时间**不是心跳 ——
+       * 所以这一格问的是「这台电视一周没人开过」，不是「它掉线了」。
+       * 说成「离线」会让前台跑去检查网络，而实际情况多半是房间空着。
+       */
+      const STALE_DAYS = 7;
+      const ROOM_FILTERS = [
+        ['all', '全部', () => true],
+        ['checkedin', '已入住', (d) => d.checkedIn],
+        ['vacant', '空房', (d) => d.roomId && !d.checkedIn],
+        ['unassigned', '未分房', (d) => !d.roomId],
+        ['unbound', '待配对', (d) => !d.bound],
+        // 从没上报过的不算「很久没开机」—— 那是「待配对」那一格的事，
+        // 一台刚插上电还没配对的盒子被说成「七天没开机」是假话。
+        ['stale', STALE_DAYS + ' 天没开机', (d) => Boolean(d.lastSeen) && Date.now() / 1000 - d.lastSeen > STALE_DAYS * 86400],
+      ];
+      let roomMode = 'all';
+
+      function renderRoomChips() {
+        $('roomChips').replaceChildren(
+          ...ROOM_FILTERS.map(([key, name, pick]) => {
+            const n = (roster?.devices ?? []).filter(pick).length;
+            const btn = el('button', { className: 'chip' + (roomMode === key ? ' on' : '') });
+            btn.append(el('span', { textContent: name }), el('b', { textContent: String(n) }));
+            btn.onclick = () => {
+              roomMode = key;
+              renderRooms();
+            };
+            return btn;
+          }),
+        );
+      }
+
       function renderRooms() {
         const body = $('roomRows');
+        renderRoomChips();
         if (!roster) {
           body.replaceChildren();
           $('roomEmpty').textContent = '正在读取…';
@@ -2362,11 +2592,9 @@
         }
 
         const q = $('roomSearch').value.trim().toLowerCase();
-        const mode = $('roomFilter').value;
+        const pick = (ROOM_FILTERS.find(([k]) => k === roomMode) ?? ROOM_FILTERS[0])[2];
         const rows = roster.devices.filter((d) => {
-          if (mode === 'unassigned' && d.roomId) return false;
-          if (mode === 'unbound' && d.bound) return false;
-          if (mode === 'checkedin' && !d.checkedIn) return false;
+          if (!pick(d)) return false;
           if (!q) return true;
           return [d.roomId, d.label, d.deviceId, d.guestName, d.mac].some((v) =>
             String(v || '').toLowerCase().includes(q),
@@ -2374,14 +2602,12 @@
         });
 
         $('roomStat').textContent =
-          roster.devices.length +
-          ' 台盒子 · ' +
-          roster.devices.filter((d) => d.roomId).length +
-          ' 台已分房 · ' +
-          roster.rooms.filter((r) => r.checkedIn).length +
-          ' 间已入住';
+          rows.length === roster.devices.length
+            ? roster.devices.length + ' 台盒子'
+            : '显示 ' + rows.length + ' / ' + roster.devices.length + ' 台';
 
         body.replaceChildren(...rows.map(deviceRow));
+        renderOverview();
         renderEmptyRooms();
         $('roomEmpty').textContent = rows.length
           ? ''
@@ -2430,7 +2656,6 @@
 
       $('reloadRooms').onclick = loadRooms;
       $('roomSearch').oninput = renderRooms;
-      $('roomFilter').onchange = renderRooms;
 
       // ------------------------------------------------ 客房服务 / 收款
 
@@ -2615,6 +2840,7 @@
           );
         }
 
+        renderOverview();
         const curs = new Set((svc?.menu ?? []).map((i) => i.currency));
         $('svcCurrency').value = curs.size === 1 ? [...curs][0] : (svc?.currency ?? '');
         $('svcCurrency').placeholder = curs.size > 1 ? '现在有 ' + curs.size + ' 种，建议统一' : 'USD';
@@ -2788,6 +3014,7 @@
       }
 
       function renderSpots() {
+        renderOverview();
         const rows = spots.map(spotRow);
         if (draftSpot) rows.unshift(spotRow(draftSpot));
         $('spotRows').replaceChildren(
@@ -2831,6 +3058,7 @@
 
       function renderPay() {
         if (!payData) return;
+        renderOverview();
         const isPlatformScope = payScope === 'platform' && payData.platformChannel;
         const c = isPlatformScope ? payData.platformChannel : payData.channel;
         const b = payData.billing;
@@ -3139,7 +3367,7 @@
         $('login').hidden = true;
         $('app').hidden = false;
         applyScope();
-        showPage(location.hash.slice(1) || 'rooms');
+        showPage(location.hash.slice(1) || 'overview');
         await refresh();
       }
 
@@ -3164,7 +3392,7 @@
           propList = who.properties ?? [];
           currentProp = propList[0]?.id ?? null;
           applyScope();
-          showPage(location.hash.slice(1) || 'rooms');
+          showPage(location.hash.slice(1) || 'overview');
           await refresh();
           $('app').hidden = false;
         } catch {
