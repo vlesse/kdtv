@@ -449,7 +449,34 @@ function showPortalHome() {
     tiles.push({ id: 'adult', icon: 'lock', key: 'tile.adult', go: enterAdult });
   }
 
-  mount(launcherView(session, tiles, showLangPicker));
+  const root = launcherView(session, tiles, showLangPicker);
+  mount(root);
+
+  /*
+   * 回到首页时悄悄再问一次服务端。
+   *
+   * 「这个房间能不能看成人区」「这家酒店填周边了没有」「客人叫什么名字」——
+   * 这几件事**只在开机那一次 hello 里发过一次**。前台在后台勾完，电视上要
+   * 等到下次开机才认，而前台看到的是「我勾了，它没反应」，然后去拔电源。
+   *
+   * 所以每次回到首页问一次（一个很小的请求），**只有真的变了才重画** ——
+   * 无条件重画会把焦点弹回第一格，客人按着遥控器的手会觉得屏幕在跟他抢。
+   */
+  const before = JSON.stringify([adultAvailable, exploreAvailable, session?.room?.id ?? null]);
+  void api
+    .hello()
+    .then((fresh) => {
+      if (!fresh.activated) return;
+      session = fresh;
+      adultAvailable = Boolean(fresh.adultAvailable);
+      exploreAvailable = Boolean(fresh.exploreAvailable);
+      const after = JSON.stringify([adultAvailable, exploreAvailable, session?.room?.id ?? null]);
+      // 人已经点进别的屏幕了就不管 —— 往一个扔掉的首页上重画没有意义。
+      if (after !== before && root.isConnected) showPortalHome();
+    })
+    .catch(() => {
+      /* 问不到就算了，首页上现成的那份照常用 */
+    });
 }
 
 // ------------------------------------------------- 模板 B：直播优先

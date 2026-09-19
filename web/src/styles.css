@@ -1061,8 +1061,34 @@ img {
   display: block;
 }
 
-.seek-bar:focus {
+/*
+ * 选中的进度条。
+ *
+ * 全局的 `.focusable:focus` 会放大 1.06 并描一圈白边 —— 那是给方块和卡片
+ * 写的，套在一条通栏的细条上，看起来是整条歪出去了。这里换成：条子变粗、
+ * 底色提亮、**右端长出一个白点**。白点才是电视上「我现在能拖它」的标志。
+ */
+.seek-bar.focusable:focus {
   height: 0.6rem;
+  transform: none;
+  background: rgba(255, 255, 255, 0.32);
+  box-shadow: none;
+}
+
+.seek-bar:focus .seek-fill::after,
+.seek-bar[data-seeking] .seek-fill::after {
+  opacity: 1;
+}
+
+/* 正在拖的时候进度条是**目标位置**，不是画面位置，所以要看得出来不一样。 */
+.seek-bar[data-seeking] .seek-fill {
+  background: #fff;
+}
+
+.seek-hint {
+  color: var(--dim);
+  font-size: 0.8rem;
+  margin: -0.5rem 0 0.9rem;
 }
 
 .seek-fill {
@@ -1071,6 +1097,22 @@ img {
   width: 0;
   border-radius: 999px;
   background: var(--accent);
+}
+
+/* 拖动把手。长在已播部分的右端，隔着几米也看得见自己拖到哪儿了。 */
+.seek-fill::after {
+  content: '';
+  position: absolute;
+  right: -0.45rem;
+  top: 50%;
+  width: 0.9rem;
+  height: 0.9rem;
+  margin-top: -0.45rem;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
+  opacity: 0;
+  transition: opacity 0.15s var(--ease);
 }
 
 @media (max-width: 900px) {

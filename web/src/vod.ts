@@ -271,10 +271,22 @@ export function vodPlayerView(
 
   const playBtn = h('button', {
     class: 'btn focusable',
-    'data-autofocus': '',
     text: t('vod.pause'),
     onclick: () => togglePlay(),
   });
+
+  /*
+   * 进度条是**进播放器时默认选中的那个东西**，不是播放键。
+   *
+   * 遥控器上先按的一定是左右键 —— 那是「快进快退」在所有电视上的意思。
+   * 原来焦点落在播放键上，左右键只是在几个按钮之间挪，客人按了半天
+   * 什么也没发生，只会得出「这播放器不能快进」的结论。播放键往下一格就是。
+   */
+  const seekBar = h(
+    'span',
+    { class: 'seek-bar focusable', tabindex: '0', 'data-autofocus': '' },
+    fill,
+  );
 
   const nextBtn = h('button', {
     class: 'btn ghost focusable',
@@ -289,13 +301,8 @@ export function vodPlayerView(
     h(
       'div',
       { class: 'player-bottom' },
-      h(
-        'div',
-        { class: 'seek' },
-        elapsed,
-        h('span', { class: 'seek-bar focusable', tabindex: '0' }, fill),
-        total,
-      ),
+      h('div', { class: 'seek' }, elapsed, seekBar, total),
+      h('div', { class: 'seek-hint', text: t('vod.seekHint') }),
       h(
         'div',
         { style: 'display:flex;gap:.75rem;align-items:center' },
@@ -384,11 +391,60 @@ export function vodPlayerView(
     playBtn.textContent = video.paused ? t('vod.play') : t('vod.pause');
   }
 
-  function seekBy(seconds: number) {
-    if (!Number.isFinite(video.duration)) return;
-    video.currentTime = Math.max(0, Math.min(video.duration - 1, video.currentTime + seconds));
-    showOverlay();
+  /*
+   * 快进是**先画后跳**的。
+   *
+   * 遥控器按住不放会连发按键，一下十几次。每来一次就写一次 `currentTime`，
+   * 等于让播放器连着重开十几次缓冲 —— 画面卡死，进度条一顿一顿，
+   * 而客人只是想往前拖一分钟。
+   *
+   * 所以按键只改「要去哪儿」并立刻把进度条画过去（客人看得见自己在拖），
+   * 手停下来 350 毫秒之后才真的跳一次。这也是电视上那些播放器的做法。
+   */
+  const SEEK_SETTLE_MS = 350;
+  let pendingAt: number | null = null;
+  let seekTimer: number | undefined;
+
+  function paintProgress(at: number, dur: number) {
+    elapsed.textContent = mmss(at);
+    total.textContent = mmss(dur);
+    fill.style.width = `${dur ? (at / dur) * 100 : 0}%`;
   }
+
+  function aimAt(at: number) {
+    const dur = video.duration;
+    if (!Number.isFinite(dur) || dur <= 0) return;
+
+    pendingAt = Math.max(0, Math.min(dur - 1, at));
+    paintProgress(pendingAt, dur);
+    seekBar.dataset.seeking = 'true';
+    showOverlay();
+
+    clearTimeout(seekTimer);
+    seekTimer = window.setTimeout(() => {
+      if (pendingAt == null) return;
+      video.currentTime = pendingAt;
+      pendingAt = null;
+      delete seekBar.dataset.seeking;
+    }, SEEK_SETTLE_MS);
+  }
+
+  /** 往前/往后多少秒。连按是在**上一次的目标**上继续加，不是在画面位置上。 */
+  function seekBy(seconds: number) {
+    aimAt((pendingAt ?? video.currentTime) + seconds);
+  }
+
+  /** 跳到片长的某个比例 —— 数字键和鼠标点进度条都走这里。 */
+  function seekToFraction(f: number) {
+    if (!Number.isFinite(video.duration)) return;
+    aimAt(video.duration * Math.max(0, Math.min(1, f)));
+  }
+
+  // 有鼠标/飞鼠的盒子，以及在电脑上测的时候：直接点进度条。
+  seekBar.addEventListener('click', (e) => {
+    const r = seekBar.getBoundingClientRect();
+    if (r.width > 0) seekToFraction(((e as MouseEvent).clientX - r.left) / r.width);
+  });
 
   function leave() {
     persist();
@@ -409,10 +465,9 @@ export function vodPlayerView(
   }
 
   video.addEventListener('timeupdate', () => {
-    elapsed.textContent = mmss(video.currentTime);
-    total.textContent = mmss(video.duration);
-    const pct = video.duration ? (video.currentTime / video.duration) * 100 : 0;
-    fill.style.width = `${pct}%`;
+    // 正在拖的时候不要把进度条拽回播放位置 —— 那看起来就像「拖不动」。
+    if (pendingAt != null) return;
+    paintProgress(video.currentTime, video.duration);
   });
   video.addEventListener('pause', () => {
     playBtn.textContent = t('vod.play');
@@ -431,20 +486,39 @@ export function vodPlayerView(
    */
   function onKeyDown(e: KeyboardEvent) {
     const k = e.key;
+    // 控件是不是本来就藏着的，要在 showOverlay() 之前问 —— 它下一行就把藏的掀开了。
+    const wasHidden = overlay.dataset.hidden === 'true';
     showOverlay();
 
-    // Left/Right scrub only while the seek bar holds focus; everywhere else
-    // they must keep moving focus or the remote feels broken.
-    const onSeekBar = (document.activeElement as HTMLElement | null)?.classList.contains('seek-bar');
-    if (onSeekBar && (k === 'ArrowLeft' || k === 'ArrowRight')) {
+    const eat = () => {
       e.preventDefault();
       e.stopPropagation();
+    };
+
+    // 遥控器上的专用键。有这几个键的遥控器不多，但有的人第一下就按它。
+    if (k === 'MediaFastForward') return eat(), seekBy(30);
+    if (k === 'MediaRewind') return eat(), seekBy(-30);
+    if (k === 'MediaPlayPause' || k === 'MediaPlay' || k === 'MediaPause') return eat(), togglePlay();
+
+    // 数字键跳到片长的十分之几 —— 电视上「从中间某处开始看」最快的办法，
+    // 拿方向键从头拖过去要按几十下。
+    if (/^[0-9]$/.test(k)) return eat(), seekToFraction(Number(k) / 10);
+
+    /*
+     * 左右键：焦点在进度条上时快退快进；**控件本来藏着的时候也算**——
+     * 画面上什么都没有的时候，左右键只可能是「快进快退」的意思。
+     * 其余情况（控件亮着、焦点在按钮那一行）左右键还是挪焦点，
+     * 不然遥控器就废了一半。
+     */
+    const onSeekBar = (document.activeElement as HTMLElement | null)?.classList.contains('seek-bar');
+    if ((onSeekBar || wasHidden) && (k === 'ArrowLeft' || k === 'ArrowRight')) {
+      eat();
+      if (!onSeekBar) seekBar.focus();
       seekBy(k === 'ArrowRight' ? 15 : -15);
       return;
     }
     if (onSeekBar && (k === 'Enter' || k === 'NumpadEnter')) {
-      e.preventDefault();
-      e.stopPropagation();
+      eat();
       togglePlay();
     }
   }
