@@ -1171,8 +1171,11 @@ function askPin() {
        * 屏幕上还是刚才那一层，背景视频也被键盘层遮掉了，客人对着一块
        * 不动的东西等好几秒 —— 那份片库有五千多部，不是一眨眼的事。
        */
+      // 顺序要紧：`reloadCatalogue()` 的同步那一段会把「正在载入」这个标志
+      // 立起来，先拿到它再上屏，那一屏才会写「正在载入」而不是「这里是空的」。
+      const loaded = reloadCatalogue();
       showAdultSection();
-      void reloadCatalogue().then(() => {
+      void loaded.then(() => {
         if (rerender === showAdultSection) showAdultSection();
       });
       return;
