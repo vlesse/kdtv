@@ -24,14 +24,75 @@
         font: 14px/1.6 system-ui, "Microsoft YaHei", "PingFang SC", sans-serif;
       }
       a { color: var(--accent); }
-      .wrap { max-width: 1000px; margin: 0 auto; padding: 24px 20px 80px; }
+      /*
+       * 左边导航、右边一页。
+       *
+       * 原来是一整条往下滚：十六个板块、三千行，改一个房间号要滚过品牌、
+       * 自定义 CSS、收款。前台一天要开十几次这个页面，每次都得重新找。
+       *
+       * 分页之后每一页只剩一件事，地址栏带 #rooms 这样的锚 ——
+       * 前台可以把「房间与设备」直接存成书签。
+       */
+      .wrap { display: grid; grid-template-columns: 236px minmax(0, 1fr); min-height: 100vh; }
+
+      .side {
+        position: sticky; top: 0; align-self: start; height: 100vh; overflow: auto;
+        display: flex; flex-direction: column; gap: 4px;
+        padding: 18px 12px; background: #0a0e14; border-right: 1px solid var(--line);
+      }
+      .side .brand { font-size: 15px; font-weight: 700; padding: 2px 10px 12px; }
+      .side select { width: calc(100% - 4px); max-width: none; margin: 0 2px 10px; }
+      .side .grp {
+        color: var(--muted); font-size: 11px; letter-spacing: .08em;
+        margin: 14px 10px 4px; text-transform: uppercase;
+      }
+      .side-foot { margin-top: auto; padding-top: 14px; }
+
+      .navi {
+        display: flex; align-items: center; gap: 8px; width: 100%;
+        text-align: left; background: transparent; border: 1px solid transparent;
+        padding: 8px 10px; border-radius: 8px; color: var(--text); font: inherit; cursor: pointer;
+      }
+      .navi:hover { background: #161b22; border-color: transparent; }
+      /* 当前这一页：左边一道竖杠。选中态必须一眼看得出来，
+         不然分了页反而比一长条更容易迷路。 */
+      .navi.on { background: #16243a; box-shadow: inset 2px 0 0 var(--accent); color: #fff; }
+      .navi .badge {
+        margin-left: auto; background: var(--danger); color: #fff;
+        border-radius: 999px; padding: 0 7px; font-size: 11px; line-height: 18px;
+      }
+
+      main { padding: 0 26px 70px; min-width: 0; }
+      /* 内容压到一千一百出头：表格要宽，但大屏上一行文字横跨两千像素
+         是读不下去的。 */
+      main > header, main > .page { max-width: 1140px; }
       header {
-        display: flex; align-items: baseline; gap: 12px;
-        border-bottom: 1px solid var(--line); padding-bottom: 14px; margin-bottom: 24px;
+        position: sticky; top: 0; z-index: 5; background: var(--bg);
+        display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+        border-bottom: 1px solid var(--line); padding: 18px 0 14px; margin-bottom: 22px;
       }
       header h1 { font-size: 18px; margin: 0; }
+      header .crumb { color: var(--muted); font-size: 15px; }
+      header .crumb::before { content: '/'; margin-right: 10px; color: var(--line); }
       header .sub { color: var(--muted); font-size: 13px; }
       header .right { margin-left: auto; }
+
+      .page { display: none; }
+      .page.on { display: block; }
+
+      /* 窄屏（有人会在手机上开一下）：导航压成一条横的。前台真正用的是
+         /desk/，这里只要不散架。 */
+      @media (max-width: 860px) {
+        .wrap { grid-template-columns: 1fr; }
+        .side {
+          position: static; height: auto; flex-direction: row; flex-wrap: wrap;
+          align-items: center; border-right: 0; border-bottom: 1px solid var(--line);
+        }
+        .side .grp, .side .brand { display: none; }
+        .side-foot { margin-top: 0; padding-top: 0; }
+        .navi { width: auto; }
+        main { padding: 0 14px 60px; }
+      }
 
       section {
         background: var(--panel); border: 1px solid var(--line);
@@ -214,103 +275,34 @@
 
     <!-- -------------------------------------------------------------- app -->
     <div class="wrap" id="app" hidden>
-      <header>
-        <h1 id="pageTitle">KDTV 后台</h1>
-        <select id="propPick" style="max-width:240px" hidden></select>
-        <span class="sub" id="stat"></span>
-        <span class="right">
-          <button class="ghost" id="manageProps" hidden>管理酒店</button>
-          <button class="ghost" id="logout">退出</button>
-        </span>
-      </header>
+      <aside class="side">
+        <div class="brand">KDTV 后台</div>
+        <select id="propPick" hidden></select>
+        <div class="grp">运营</div>
+        <button class="navi" data-page="rooms">房间与设备</button>
+        <button class="navi" data-page="service">客房服务<span class="badge" id="navSvcBadge" hidden></span></button>
+        <button class="navi" data-page="explore">旅游周边</button>
+        <div class="grp">电视界面</div>
+        <button class="navi" data-page="look">电视界面</button>
+        <button class="navi" data-page="brand">品牌与文字</button>
+        <button class="navi" data-page="tv">电视端</button>
+        <div class="grp">内容与收款</div>
+        <button class="navi" data-page="adult">成人板块</button>
+        <button class="navi" data-page="pay">收款与计费</button>
+        <div class="grp" id="navPlatformGrp" hidden>平台</div>
+        <button class="navi" data-page="props" id="navProps" hidden>酒店</button>
+        <button class="navi" data-page="panels" id="navPanels" hidden>面板</button>
+        <div class="side-foot"><button class="ghost" id="logout">退出</button></div>
+      </aside>
 
-      <section id="panelsSection" hidden>
-        <h2>面板</h2>
-        <p class="hint">
-          <strong>面板是一台服务器</strong>（一整套后台、片库、推流）；<strong>线路是那台面板上的一个账号</strong>，
-          决定它能看到哪些套餐、能几个房间同时看。<strong>换线路是换「看到什么」，换面板是换「从哪台机器拿」。</strong>
-        </p>
-        <p class="hint">
-          所以<strong>一条线路只在它自己那台面板上有效</strong> —— 把 A 面板的线路填给指着 B 面板的酒店，
-          认证会失败，那家的电视会全黑。改之前先用「试一下」问一句。
-        </p>
-        <div class="scroll">
-          <table class="tbl">
-            <thead>
-              <tr>
-                <th>面板</th><th>标识</th><th>接口地址</th><th>播放地址</th><th>酒店</th><th></th>
-              </tr>
-            </thead>
-            <tbody id="panelRows"></tbody>
-          </table>
-        </div>
+      <main>
+        <header>
+          <h1 id="pageTitle">KDTV 后台</h1>
+          <span class="crumb" id="crumb"></span>
+          <span class="sub" id="stat"></span>
+        </header>
 
-        <label style="margin-top:18px">接一台新面板</label>
-        <p class="hint">
-          <strong>公网上的面板，两个地址都填它自己就行</strong>，比如
-          <span class="mono">http://1.2.3.4</span> —— 明文 http 不用管，电视盒子能放
-          （实测过；上游 CDN 本来也全是明文）。填完点「试一下」确认。
-        </p>
-        <p class="hint">
-          两格的区别只在<strong>谁去访问它</strong>，绝大多数时候一样：<br />
-          <strong>接口地址</strong>　<strong>这台服务器</strong>拿频道列表用 —— 内网地址也行。<br />
-          <strong>播放地址</strong>　<strong>酒店里的盒子</strong>拿视频用 —— 必须是客房里够得着的地址。
-        </p>
-        <p class="hint">
-          只有三种情况要先去 nginx 里给它开一个反代入口（像
-          <span class="mono">/stream/</span> 那样）、再把那个地址填在「播放地址」：
-          <strong>①</strong> 面板只有内网地址；<strong>②</strong> 你想在电脑浏览器里也能试播
-          （浏览器会拦明文，电视不会）；<strong>③</strong> 不想把面板地址发给每一台盒子。
-        </p>
-        <div class="row">
-          <input id="newPanelName" type="text" placeholder="面板名字，如 台湾测试机" style="flex:1;min-width:150px" />
-          <input id="newPanelSlug" type="text" placeholder="标识，如 tw-test" style="width:130px" />
-        </div>
-        <div class="row" style="margin-top:8px">
-          <input id="newPanelApi" type="text" placeholder="接口地址，如 http://10.140.0.4" style="flex:1;min-width:190px" />
-          <input id="newPanelPub" type="text" placeholder="播放地址，如 https://你的域名/stream/tw" style="flex:1;min-width:190px" />
-          <button class="primary" id="addPanel">接上</button>
-        </div>
-      </section>
-
-      <section id="propsSection" hidden>
-        <h2>酒店</h2>
-        <p class="hint">
-          十家酒店共用这一台服务器和同一个 APK。盒子插电开机时服务端认不出它是谁的，
-          所以要么<strong>在这里先设一个「新盒子默认进哪家」</strong>（一次铺一家时最省事，
-          铺完记得清掉），要么让它显示配对码、在「房间与设备」里逐台划。
-        </p>
-        <div class="scroll">
-          <table class="tbl">
-            <thead>
-              <tr>
-                <th>酒店</th><th>标识</th><th>面板</th><th>线路</th><th>盒子</th>
-                <th>在住</th><th>待处理</th><th>后台登录</th><th></th>
-              </tr>
-            </thead>
-            <tbody id="propRows"></tbody>
-          </table>
-        </div>
-
-        <label style="margin-top:18px">新增酒店</label>
-        <div class="row">
-          <input id="newPropName" type="text" placeholder="酒店名字，如 吴哥大酒店" style="flex:1;min-width:180px" />
-          <input id="newPropSlug" type="text" placeholder="标识，如 angkor" style="width:160px" />
-          <button class="primary" id="addProp">建一家</button>
-        </div>
-
-        <label style="margin-top:18px">新盒子默认进哪家</label>
-        <p class="hint">
-          设上之后，没见过的盒子一开机就自动归到这家，现场不用输任何东西。
-          <strong>铺完这一家一定要清掉</strong> —— 留着的话下一家的盒子会进错门。
-        </p>
-        <div class="row">
-          <select id="defaultProp" style="max-width:240px"></select>
-          <button id="saveDefaultProp">保存</button>
-          <span class="hint" style="margin:0" id="defaultPropState"></span>
-        </div>
-      </section>
-
+      <div class="page" id="page-rooms">
       <section>
         <h2>房间与设备</h2>
         <p class="hint">
@@ -368,202 +360,9 @@
           <div class="row" id="emptyRoomList"></div>
         </div>
       </section>
+      </div>
 
-      <section>
-        <h2>当前背景</h2>
-        <p class="hint">改完立刻生效，电视上退回首页或重进 App 就能看到，不用重装 APK。</p>
-        <div class="current">
-          <div class="preview" id="preview">未设置</div>
-          <div>
-            <dl id="bgInfo"></dl>
-            <div class="row" style="margin-top: 14px">
-              <button class="ghost" id="useNone">恢复默认渐变</button>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section>
-        <h2>上传图片或视频</h2>
-        <p class="hint">
-          图片 JPG / PNG / WebP，视频 MP4 / WebM。视频背景是<b>静音循环</b>播放的。<br />
-          做背景的片子：<b>1920×1080</b>、<b>15～30 秒</b>、<b>10MB 以内</b>、<b>去掉音轨</b>；
-          导出 MP4 时务必勾上 <b>Web Optimized / faststart</b>，否则电视要把整个文件下完才出画面。
-          传完这里会逐条检查并告诉你哪项不合格。
-        </p>
-        <div class="drop" id="drop">
-          点这里选文件，或把文件拖进来<br />
-          <span id="limit"></span>
-        </div>
-        <div class="bar" id="bar" hidden><i></i></div>
-        <!-- Upload findings live here rather than in a toast: a toast is gone
-             before an operator has finished reading four lines of them. -->
-        <ul class="checks" id="checks" hidden></ul>
-        <input type="file" id="file" accept="image/*,video/*" hidden />
-      </section>
-
-      <section>
-        <h2>已上传的素材</h2>
-        <p class="hint">点「设为背景」切换。删除会同时删掉服务器上的文件。</p>
-        <div class="grid" id="lib"></div>
-      </section>
-
-      <section>
-        <h2>用外部链接</h2>
-        <p class="hint">
-          不想上传就填个直链。<b>必须是 https</b> —— 电视端页面是 https，
-          http 的图片会被当成混合内容直接拦掉，屏幕上什么都不会出现。
-        </p>
-        <label for="extUrl">图片或视频地址</label>
-        <input id="extUrl" type="text" placeholder="https://example.com/lobby.jpg" />
-        <div class="row" style="margin-top: 12px">
-          <button id="extImg">设为图片背景</button>
-          <button id="extVid">设为视频背景</button>
-        </div>
-      </section>
-
-      <section>
-        <h2>品牌 / 外观</h2>
-        <p class="hint">
-          开机画面、播放器加载图、Logo、主色。先在上面「上传图片或视频」传好，
-          再回到这里从下拉里挑，或者直接填 https 链接。
-        </p>
-
-        <label for="splashUrl">开机画面背景</label>
-        <div class="row">
-          <select id="splashPick"></select>
-          <input id="splashUrl" type="text" placeholder="留空 = 用首页背景" style="flex:1;min-width:220px" />
-        </div>
-
-        <label for="loadingUrl">播放器加载背景（拉信源时那几秒）</label>
-        <div class="row">
-          <select id="loadingPick"></select>
-          <input id="loadingUrl" type="text" placeholder="留空 = 用内置深色渐变" style="flex:1;min-width:220px" />
-        </div>
-
-        <label for="logoUrl">Logo（开机画面 + 关于我们）</label>
-        <div class="row">
-          <select id="logoPick"></select>
-          <input id="logoUrl" type="text" placeholder="建议透明底 PNG" style="flex:1;min-width:220px" />
-        </div>
-
-        <label for="accent">主色</label>
-        <div class="row">
-          <input id="accentPicker" type="color" style="width:52px;height:36px;padding:2px" />
-          <input id="accent" type="text" placeholder="#ff2d55" style="flex:1;min-width:160px" />
-        </div>
-
-        <div class="row" style="margin-top: 16px">
-          <button class="primary" id="saveBrand">保存</button>
-        </div>
-      </section>
-
-      <section>
-        <h2>自定义 CSS</h2>
-        <p class="hint">
-          上面那些按钮盖不住的地方，在这里直接写 CSS 改。这份样式表在电视端<b>最后加载</b>，
-          所以能覆盖掉我们自己的样式，不用加 <code>!important</code>。
-          写错了不会让 App 崩，最多是某处样子不对 —— 清空这里就还原。
-        </p>
-        <textarea id="customCss" spellcheck="false" placeholder=".tile-label { letter-spacing: .05em }"></textarea>
-        <div class="row" style="margin-top: 12px">
-          <button class="primary" id="saveCss">保存</button>
-          <button class="ghost" id="clearCss">清空</button>
-          <span class="hint" style="margin:0" id="cssLen"></span>
-        </div>
-      </section>
-
-      <section>
-        <h2>文字</h2>
-        <p class="hint">留空就用内置的多语言默认值（中/英/柬/印尼会各自翻译）。</p>
-        <label for="welcomeText">欢迎语（覆盖「欢迎光临」）</label>
-        <input id="welcomeText" type="text" placeholder="欢迎光临" />
-        <label for="propertyName">物业名称（关于我们页）</label>
-        <input id="propertyName" type="text" placeholder="KDTV" />
-        <label for="supportContact">客服电话 / 分机</label>
-        <input id="supportContact" type="text" placeholder="8888" />
-        <div class="row" style="margin-top: 14px">
-          <button class="primary" id="saveText">保存</button>
-        </div>
-      </section>
-
-      <section>
-        <h2>电视端</h2>
-        <p class="hint">
-          整店下发到每台盒子，改完盒子下次开机或下次切台生效。
-        </p>
-
-        <label>界面模板</label>
-        <p class="hint">
-          两套没有好坏之分，看客人是谁：<strong>度假酒店</strong>的客人会去翻点播和点餐，
-          门户更合适；<strong>商务酒店和长住公寓</strong>的客人进门就是开电视看新闻，
-          让他多按两下都是多余的。同一个 APP，哪家用哪套这里选。
-        </p>
-        <div class="row">
-          <select id="tvTemplate" style="max-width:280px">
-            <option value="portal">酒店门户 —— 开机是宫格首页</option>
-            <option value="live">直播优先 —— 开机直接进直播全屏</option>
-          </select>
-          <span class="hint" style="margin:0" id="tvTemplateHint"></span>
-        </div>
-
-        <label style="margin-top:18px">直播模式（默认值）</label>
-        <p class="hint">
-          缓冲越长越不卡，也越落后于直播。这里定的是默认值 ——
-          某个房间的客人在播放器里自己换过档，以他自己的为准。
-        </p>
-        <div class="row">
-          <select id="tvProfile" style="max-width:220px">
-            <option value="stable">流畅优先（缓冲 30 秒）</option>
-            <option value="balanced">标准（缓冲 12 秒）</option>
-            <option value="low">低延迟（缓冲 6 秒）</option>
-          </select>
-        </div>
-
-        <label style="margin-top:18px">排查叠层</label>
-        <p class="hint">
-          打开后每台电视右上角显示码率、带宽、缓冲、丢帧、直连还是走中继。
-          <strong>上门排查前打开，走之前关掉</strong> ——
-          它能分清「上行不够」「盒子解不动」「源坏了」这三种，光看画面分不清。
-        </p>
-        <div class="row">
-          <button id="toggleDiag">开启排查叠层</button>
-          <span class="hint" style="margin:0" id="tvState"></span>
-        </div>
-      </section>
-
-      <section>
-        <h2>各页面背景</h2>
-        <p class="hint">
-          首页背景在上面单独设（首页可以放视频）。这里是<strong>其他几个页面</strong>的背景，
-          留空就跟首页用同一张。只能用图片 —— 这几个页面下一步就是播放器，
-          再挂一个视频会跟播放器抢盒子的解码器。
-        </p>
-
-        <label for="sceneLive">电视直播</label>
-        <div class="row">
-          <input id="sceneLive" type="text" placeholder="/media/… 或 https://…" style="flex:1;min-width:220px" />
-          <select id="sceneLivePick"></select>
-        </div>
-
-        <label for="sceneVod">影视点播</label>
-        <div class="row">
-          <input id="sceneVod" type="text" placeholder="/media/… 或 https://…" style="flex:1;min-width:220px" />
-          <select id="sceneVodPick"></select>
-        </div>
-
-        <label for="sceneService">客房服务</label>
-        <div class="row">
-          <input id="sceneService" type="text" placeholder="/media/… 或 https://…" style="flex:1;min-width:220px" />
-          <select id="sceneServicePick"></select>
-        </div>
-
-        <div class="row" style="margin-top:14px">
-          <button class="primary" id="saveScenes">保存页面背景</button>
-          <button id="clearScenes">全部清空</button>
-        </div>
-      </section>
-
+      <div class="page" id="page-service">
       <section>
         <h2>客房服务 <span class="pill" id="svcPending"></span></h2>
         <p class="hint">
@@ -614,7 +413,9 @@
           </table>
         </div>
       </section>
+      </div>
 
+      <div class="page" id="page-explore">
       <section>
         <h2>旅游周边</h2>
         <p class="hint">
@@ -642,7 +443,257 @@
           </table>
         </div>
       </section>
+      </div>
 
+      <div class="page" id="page-look">
+      <section>
+        <h2>当前背景</h2>
+        <p class="hint">改完立刻生效，电视上退回首页或重进 App 就能看到，不用重装 APK。</p>
+        <div class="current">
+          <div class="preview" id="preview">未设置</div>
+          <div>
+            <dl id="bgInfo"></dl>
+            <div class="row" style="margin-top: 14px">
+              <button class="ghost" id="useNone">恢复默认渐变</button>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section>
+        <h2>上传图片或视频</h2>
+        <p class="hint">
+          图片 JPG / PNG / WebP，视频 MP4 / WebM。视频背景是<b>静音循环</b>播放的。<br />
+          做背景的片子：<b>1920×1080</b>、<b>15～30 秒</b>、<b>10MB 以内</b>、<b>去掉音轨</b>；
+          导出 MP4 时务必勾上 <b>Web Optimized / faststart</b>，否则电视要把整个文件下完才出画面。
+          传完这里会逐条检查并告诉你哪项不合格。
+        </p>
+        <div class="drop" id="drop">
+          点这里选文件，或把文件拖进来<br />
+          <span id="limit"></span>
+        </div>
+        <div class="bar" id="bar" hidden><i></i></div>
+        <!-- Upload findings live here rather than in a toast: a toast is gone
+             before an operator has finished reading four lines of them. -->
+        <ul class="checks" id="checks" hidden></ul>
+        <input type="file" id="file" accept="image/*,video/*" hidden />
+      </section>
+      <section>
+        <h2>已上传的素材</h2>
+        <p class="hint">点「设为背景」切换。删除会同时删掉服务器上的文件。</p>
+        <div class="grid" id="lib"></div>
+      </section>
+      <section>
+        <h2>用外部链接</h2>
+        <p class="hint">
+          不想上传就填个直链。<b>必须是 https</b> —— 电视端页面是 https，
+          http 的图片会被当成混合内容直接拦掉，屏幕上什么都不会出现。
+        </p>
+        <label for="extUrl">图片或视频地址</label>
+        <input id="extUrl" type="text" placeholder="https://example.com/lobby.jpg" />
+        <div class="row" style="margin-top: 12px">
+          <button id="extImg">设为图片背景</button>
+          <button id="extVid">设为视频背景</button>
+        </div>
+      </section>
+      <section>
+        <h2>各页面背景</h2>
+        <p class="hint">
+          首页背景在上面单独设（首页可以放视频）。这里是<strong>其他几个页面</strong>的背景，
+          留空就跟首页用同一张。只能用图片 —— 这几个页面下一步就是播放器，
+          再挂一个视频会跟播放器抢盒子的解码器。
+        </p>
+
+        <label for="sceneLive">电视直播</label>
+        <div class="row">
+          <input id="sceneLive" type="text" placeholder="/media/… 或 https://…" style="flex:1;min-width:220px" />
+          <select id="sceneLivePick"></select>
+        </div>
+
+        <label for="sceneVod">影视点播</label>
+        <div class="row">
+          <input id="sceneVod" type="text" placeholder="/media/… 或 https://…" style="flex:1;min-width:220px" />
+          <select id="sceneVodPick"></select>
+        </div>
+
+        <label for="sceneService">客房服务</label>
+        <div class="row">
+          <input id="sceneService" type="text" placeholder="/media/… 或 https://…" style="flex:1;min-width:220px" />
+          <select id="sceneServicePick"></select>
+        </div>
+
+        <div class="row" style="margin-top:14px">
+          <button class="primary" id="saveScenes">保存页面背景</button>
+          <button id="clearScenes">全部清空</button>
+        </div>
+      </section>
+      </div>
+
+      <div class="page" id="page-brand">
+      <section>
+        <h2>品牌 / 外观</h2>
+        <p class="hint">
+          开机画面、播放器加载图、Logo、主色。先在上面「上传图片或视频」传好，
+          再回到这里从下拉里挑，或者直接填 https 链接。
+        </p>
+
+        <label for="splashUrl">开机画面背景</label>
+        <div class="row">
+          <select id="splashPick"></select>
+          <input id="splashUrl" type="text" placeholder="留空 = 用首页背景" style="flex:1;min-width:220px" />
+        </div>
+
+        <label for="loadingUrl">播放器加载背景（拉信源时那几秒）</label>
+        <div class="row">
+          <select id="loadingPick"></select>
+          <input id="loadingUrl" type="text" placeholder="留空 = 用内置深色渐变" style="flex:1;min-width:220px" />
+        </div>
+
+        <label for="logoUrl">Logo（开机画面 + 关于我们）</label>
+        <div class="row">
+          <select id="logoPick"></select>
+          <input id="logoUrl" type="text" placeholder="建议透明底 PNG" style="flex:1;min-width:220px" />
+        </div>
+
+        <label for="accent">主色</label>
+        <div class="row">
+          <input id="accentPicker" type="color" style="width:52px;height:36px;padding:2px" />
+          <input id="accent" type="text" placeholder="#ff2d55" style="flex:1;min-width:160px" />
+        </div>
+
+        <div class="row" style="margin-top: 16px">
+          <button class="primary" id="saveBrand">保存</button>
+        </div>
+      </section>
+      <section>
+        <h2>自定义 CSS</h2>
+        <p class="hint">
+          上面那些按钮盖不住的地方，在这里直接写 CSS 改。这份样式表在电视端<b>最后加载</b>，
+          所以能覆盖掉我们自己的样式，不用加 <code>!important</code>。
+          写错了不会让 App 崩，最多是某处样子不对 —— 清空这里就还原。
+        </p>
+        <textarea id="customCss" spellcheck="false" placeholder=".tile-label { letter-spacing: .05em }"></textarea>
+        <div class="row" style="margin-top: 12px">
+          <button class="primary" id="saveCss">保存</button>
+          <button class="ghost" id="clearCss">清空</button>
+          <span class="hint" style="margin:0" id="cssLen"></span>
+        </div>
+      </section>
+      <section>
+        <h2>文字</h2>
+        <p class="hint">留空就用内置的多语言默认值（中/英/柬/印尼会各自翻译）。</p>
+        <label for="welcomeText">欢迎语（覆盖「欢迎光临」）</label>
+        <input id="welcomeText" type="text" placeholder="欢迎光临" />
+        <label for="propertyName">物业名称（关于我们页）</label>
+        <input id="propertyName" type="text" placeholder="KDTV" />
+        <label for="supportContact">客服电话 / 分机</label>
+        <input id="supportContact" type="text" placeholder="8888" />
+        <div class="row" style="margin-top: 14px">
+          <button class="primary" id="saveText">保存</button>
+        </div>
+      </section>
+      </div>
+
+      <div class="page" id="page-tv">
+      <section>
+        <h2>电视端</h2>
+        <p class="hint">
+          整店下发到每台盒子，改完盒子下次开机或下次切台生效。
+        </p>
+
+        <label>界面模板</label>
+        <p class="hint">
+          两套没有好坏之分，看客人是谁：<strong>度假酒店</strong>的客人会去翻点播和点餐，
+          门户更合适；<strong>商务酒店和长住公寓</strong>的客人进门就是开电视看新闻，
+          让他多按两下都是多余的。同一个 APP，哪家用哪套这里选。
+        </p>
+        <div class="row">
+          <select id="tvTemplate" style="max-width:280px">
+            <option value="portal">酒店门户 —— 开机是宫格首页</option>
+            <option value="live">直播优先 —— 开机直接进直播全屏</option>
+          </select>
+          <span class="hint" style="margin:0" id="tvTemplateHint"></span>
+        </div>
+
+        <label style="margin-top:18px">直播模式（默认值）</label>
+        <p class="hint">
+          缓冲越长越不卡，也越落后于直播。这里定的是默认值 ——
+          某个房间的客人在播放器里自己换过档，以他自己的为准。
+        </p>
+        <div class="row">
+          <select id="tvProfile" style="max-width:220px">
+            <option value="stable">流畅优先（缓冲 30 秒）</option>
+            <option value="balanced">标准（缓冲 12 秒）</option>
+            <option value="low">低延迟（缓冲 6 秒）</option>
+          </select>
+        </div>
+
+        <label style="margin-top:18px">排查叠层</label>
+        <p class="hint">
+          打开后每台电视右上角显示码率、带宽、缓冲、丢帧、直连还是走中继。
+          <strong>上门排查前打开，走之前关掉</strong> ——
+          它能分清「上行不够」「盒子解不动」「源坏了」这三种，光看画面分不清。
+        </p>
+        <div class="row">
+          <button id="toggleDiag">开启排查叠层</button>
+          <span class="hint" style="margin:0" id="tvState"></span>
+        </div>
+      </section>
+      </div>
+
+      <div class="page" id="page-adult">
+      <section class="card">
+        <h2>成人板块</h2>
+        <p class="hint">
+          默认<strong>整体关闭</strong>。打开后仍然是三道门：面板要开、房间要单独授权、遥控器要输 PIN。
+          没授权的房间连这个图标都不会出现，服务端也不会把这些频道发给它 —— 就算有人猜到频道编号直接调接口，也是 403。
+        </p>
+
+        <label for="adultPin">PIN 码（4-8 位数字）</label>
+        <div class="row">
+          <input id="adultPin" type="text" inputmode="numeric" placeholder="留空 = 不改" style="flex:1;min-width:160px" />
+          <button id="saveAdultPin">保存 PIN</button>
+          <span class="hint" style="margin:0" id="adultPinState"></span>
+        </div>
+
+        <label style="margin-top:18px">受限分类（主要方式）</label>
+        <p class="hint">
+          直接勾面板里真实的分类，勾上的就归成人板块管 —— 分类叫什么名字都无所谓。
+          <strong>没勾的一律是普通分类</strong>，会照常出现在所有房间。
+          <span id="adultPickedCount"></span>
+        </p>
+        <div class="row">
+          <button id="loadCats">读取面板分类</button>
+          <button id="pickKeyword" hidden>按关键词全选</button>
+          <button id="clearPicked" hidden>全部取消</button>
+          <button class="primary" id="savePicked" hidden>保存勾选</button>
+        </div>
+        <div id="adultCatList"></div>
+
+        <label for="adultCats" style="margin-top:18px">兜底关键词（一行一个）</label>
+        <p class="hint">
+          只是安全网，防的是<strong>面板新加了分类、还没人来勾</strong>的那段时间。
+          内置认得 adult / xxx / 18+ / porn / 成人 / 情色 等，按名字包含匹配、不分大小写 ——
+          但真实片源很少这么起名（「伦理影片」「日韩无码」一个都不命中），所以别指望它，该勾还是要勾。
+        </p>
+        <textarea id="adultCats" spellcheck="false" placeholder="午夜剧场"></textarea>
+
+        <div class="row" style="margin-top: 14px">
+          <button id="saveAdultCats">保存关键词</button>
+          <button class="primary" id="toggleAdult">开启板块</button>
+          <span class="hint" style="margin:0" id="adultState"></span>
+        </div>
+
+        <label style="margin-top:18px">按房间授权</label>
+        <p class="hint">只有勾上的房间能看到入口；没勾的房间服务端根本不会把这些内容发给它。</p>
+        <div class="row">
+          <button id="allowAllRooms">全部授权</button>
+          <button id="denyAllRooms">全部取消</button>
+        </div>
+        <div id="adultRooms" class="grid"></div>
+      </section>
+      </div>
+
+      <div class="page" id="page-pay">
       <section>
         <h2>收款与计费</h2>
         <p class="hint">
@@ -727,57 +778,98 @@
           </table>
         </div>
       </section>
+      </div>
 
-      <section class="card">
-        <h2>成人板块</h2>
+      <div class="page" id="page-props">
+      <section id="propsSection" hidden>
+        <h2>酒店</h2>
         <p class="hint">
-          默认<strong>整体关闭</strong>。打开后仍然是三道门：面板要开、房间要单独授权、遥控器要输 PIN。
-          没授权的房间连这个图标都不会出现，服务端也不会把这些频道发给它 —— 就算有人猜到频道编号直接调接口，也是 403。
+          十家酒店共用这一台服务器和同一个 APK。盒子插电开机时服务端认不出它是谁的，
+          所以要么<strong>在这里先设一个「新盒子默认进哪家」</strong>（一次铺一家时最省事，
+          铺完记得清掉），要么让它显示配对码、在「房间与设备」里逐台划。
         </p>
-
-        <label for="adultPin">PIN 码（4-8 位数字）</label>
-        <div class="row">
-          <input id="adultPin" type="text" inputmode="numeric" placeholder="留空 = 不改" style="flex:1;min-width:160px" />
-          <button id="saveAdultPin">保存 PIN</button>
-          <span class="hint" style="margin:0" id="adultPinState"></span>
+        <div class="scroll">
+          <table class="tbl">
+            <thead>
+              <tr>
+                <th>酒店</th><th>标识</th><th>面板</th><th>线路</th><th>盒子</th>
+                <th>在住</th><th>待处理</th><th>后台登录</th><th></th>
+              </tr>
+            </thead>
+            <tbody id="propRows"></tbody>
+          </table>
         </div>
 
-        <label style="margin-top:18px">受限分类（主要方式）</label>
+        <label style="margin-top:18px">新增酒店</label>
+        <div class="row">
+          <input id="newPropName" type="text" placeholder="酒店名字，如 吴哥大酒店" style="flex:1;min-width:180px" />
+          <input id="newPropSlug" type="text" placeholder="标识，如 angkor" style="width:160px" />
+          <button class="primary" id="addProp">建一家</button>
+        </div>
+
+        <label style="margin-top:18px">新盒子默认进哪家</label>
         <p class="hint">
-          直接勾面板里真实的分类，勾上的就归成人板块管 —— 分类叫什么名字都无所谓。
-          <strong>没勾的一律是普通分类</strong>，会照常出现在所有房间。
-          <span id="adultPickedCount"></span>
+          设上之后，没见过的盒子一开机就自动归到这家，现场不用输任何东西。
+          <strong>铺完这一家一定要清掉</strong> —— 留着的话下一家的盒子会进错门。
         </p>
         <div class="row">
-          <button id="loadCats">读取面板分类</button>
-          <button id="pickKeyword" hidden>按关键词全选</button>
-          <button id="clearPicked" hidden>全部取消</button>
-          <button class="primary" id="savePicked" hidden>保存勾选</button>
+          <select id="defaultProp" style="max-width:240px"></select>
+          <button id="saveDefaultProp">保存</button>
+          <span class="hint" style="margin:0" id="defaultPropState"></span>
         </div>
-        <div id="adultCatList"></div>
-
-        <label for="adultCats" style="margin-top:18px">兜底关键词（一行一个）</label>
-        <p class="hint">
-          只是安全网，防的是<strong>面板新加了分类、还没人来勾</strong>的那段时间。
-          内置认得 adult / xxx / 18+ / porn / 成人 / 情色 等，按名字包含匹配、不分大小写 ——
-          但真实片源很少这么起名（「伦理影片」「日韩无码」一个都不命中），所以别指望它，该勾还是要勾。
-        </p>
-        <textarea id="adultCats" spellcheck="false" placeholder="午夜剧场"></textarea>
-
-        <div class="row" style="margin-top: 14px">
-          <button id="saveAdultCats">保存关键词</button>
-          <button class="primary" id="toggleAdult">开启板块</button>
-          <span class="hint" style="margin:0" id="adultState"></span>
-        </div>
-
-        <label style="margin-top:18px">按房间授权</label>
-        <p class="hint">只有勾上的房间能看到入口；没勾的房间服务端根本不会把这些内容发给它。</p>
-        <div class="row">
-          <button id="allowAllRooms">全部授权</button>
-          <button id="denyAllRooms">全部取消</button>
-        </div>
-        <div id="adultRooms" class="grid"></div>
       </section>
+      </div>
+
+      <div class="page" id="page-panels">
+      <section id="panelsSection" hidden>
+        <h2>面板</h2>
+        <p class="hint">
+          <strong>面板是一台服务器</strong>（一整套后台、片库、推流）；<strong>线路是那台面板上的一个账号</strong>，
+          决定它能看到哪些套餐、能几个房间同时看。<strong>换线路是换「看到什么」，换面板是换「从哪台机器拿」。</strong>
+        </p>
+        <p class="hint">
+          所以<strong>一条线路只在它自己那台面板上有效</strong> —— 把 A 面板的线路填给指着 B 面板的酒店，
+          认证会失败，那家的电视会全黑。改之前先用「试一下」问一句。
+        </p>
+        <div class="scroll">
+          <table class="tbl">
+            <thead>
+              <tr>
+                <th>面板</th><th>标识</th><th>接口地址</th><th>播放地址</th><th>酒店</th><th></th>
+              </tr>
+            </thead>
+            <tbody id="panelRows"></tbody>
+          </table>
+        </div>
+
+        <label style="margin-top:18px">接一台新面板</label>
+        <p class="hint">
+          <strong>公网上的面板，两个地址都填它自己就行</strong>，比如
+          <span class="mono">http://1.2.3.4</span> —— 明文 http 不用管，电视盒子能放
+          （实测过；上游 CDN 本来也全是明文）。填完点「试一下」确认。
+        </p>
+        <p class="hint">
+          两格的区别只在<strong>谁去访问它</strong>，绝大多数时候一样：<br />
+          <strong>接口地址</strong>　<strong>这台服务器</strong>拿频道列表用 —— 内网地址也行。<br />
+          <strong>播放地址</strong>　<strong>酒店里的盒子</strong>拿视频用 —— 必须是客房里够得着的地址。
+        </p>
+        <p class="hint">
+          只有三种情况要先去 nginx 里给它开一个反代入口（像
+          <span class="mono">/stream/</span> 那样）、再把那个地址填在「播放地址」：
+          <strong>①</strong> 面板只有内网地址；<strong>②</strong> 你想在电脑浏览器里也能试播
+          （浏览器会拦明文，电视不会）；<strong>③</strong> 不想把面板地址发给每一台盒子。
+        </p>
+        <div class="row">
+          <input id="newPanelName" type="text" placeholder="面板名字，如 台湾测试机" style="flex:1;min-width:150px" />
+          <input id="newPanelSlug" type="text" placeholder="标识，如 tw-test" style="width:130px" />
+        </div>
+        <div class="row" style="margin-top:8px">
+          <input id="newPanelApi" type="text" placeholder="接口地址，如 http://10.140.0.4" style="flex:1;min-width:190px" />
+          <input id="newPanelPub" type="text" placeholder="播放地址，如 https://你的域名/stream/tw" style="flex:1;min-width:190px" />
+          <button class="primary" id="addPanel">接上</button>
+        </div>
+      </section>
+      </div>
     </div>
 
     <div class="toast" id="toast"></div>
@@ -1551,12 +1643,67 @@
        * 这只是**界面**上的区分。真正挡住 A 店看 B 店的是服务端每条查询里的
        * WHERE property_id，不是这里藏没藏几个按钮。
        */
+      /* ------------------------------------------------------------ 分页
+
+       * 十六个板块分成十页，一次只显示一页。
+       *
+       * 页名写进 location.hash：刷新回到原处，前台也能把常用的那一页
+       * 存成书签。地址里是 #rooms 这种短词，不是序号 —— 序号会在
+       * 以后加板块时全部错位。
+       */
+      const PAGE_NAMES = {
+        rooms: '房间与设备',
+        service: '客房服务',
+        explore: '旅游周边',
+        look: '电视界面',
+        brand: '品牌与文字',
+        tv: '电视端',
+        adult: '成人板块',
+        pay: '收款与计费',
+        props: '酒店',
+        panels: '面板',
+      };
+
+      let page = null;
+
+      function pageOpen(name) {
+        const btn = document.querySelector('.navi[data-page="' + name + '"]');
+        return Boolean(btn) && !btn.hidden;
+      }
+
+      function showPage(name) {
+        // 地址栏里可能是任何东西（手输、旧书签、平台页但现在是酒店管理员）。
+        if (!pageOpen(name)) name = 'rooms';
+        page = name;
+
+        for (const el of document.querySelectorAll('.page')) {
+          el.classList.toggle('on', el.id === 'page-' + name);
+        }
+        for (const btn of document.querySelectorAll('.navi')) {
+          btn.classList.toggle('on', btn.dataset.page === name);
+        }
+        $('crumb').textContent = PAGE_NAMES[name] || '';
+        // 前台常同时开好几个标签页，标题都一样就只能一个个点开认。
+        document.title = 'KDTV 后台 · ' + (PAGE_NAMES[name] || '');
+        if (location.hash.slice(1) !== name) location.hash = name;
+        window.scrollTo(0, 0);
+      }
+
+      for (const btn of document.querySelectorAll('.navi')) {
+        btn.onclick = () => showPage(btn.dataset.page);
+      }
+      // 浏览器的前进/后退也认 —— 分了页之后，返回键的意思是「上一页」。
+      window.addEventListener('hashchange', () => showPage(location.hash.slice(1)));
+
       function applyScope() {
         const isPlatform = scope === 'platform';
-        $('manageProps').hidden = !isPlatform;
-        $('propsSection').hidden = !isPlatform;
-        $('panelsSection').hidden = !isPlatform;
+        $('navPlatformGrp').hidden = !isPlatform;
+        $('navProps').hidden = !isPlatform;
+        $('navPanels').hidden = !isPlatform;
         $('propPick').hidden = !isPlatform || propList.length < 2;
+        // 酒店管理员正停在「酒店」那一页上时把作用域降下来，得把他挪走，
+        // 不然他对着一页看不见的东西。
+        if (!isPlatform && (page === 'props' || page === 'panels')) showPage('rooms');
 
         if (isPlatform) {
           $('propPick').replaceChildren(
@@ -1576,11 +1723,6 @@
         currentProp = Number($('propPick').value);
         applyScope();
         await refresh();
-      };
-
-      $('manageProps').onclick = () => {
-        $('propsSection').hidden = false;
-        $('propsSection').scrollIntoView({ behavior: 'smooth' });
       };
 
       function renderProps() {
@@ -2361,6 +2503,9 @@
         const pending = svc?.pending ?? 0;
         $('svcPending').textContent = pending ? pending + ' 单待处理' : '';
         $('svcPending').className = 'pill' + (pending ? ' wait' : '');
+        // 同一个数字也挂到左边导航上：前台不点进这一页也知道有单子在等。
+        $('navSvcBadge').textContent = pending || '';
+        $('navSvcBadge').hidden = !pending;
       }
 
       async function setOrder(id, status) {
@@ -2994,6 +3139,7 @@
         $('login').hidden = true;
         $('app').hidden = false;
         applyScope();
+        showPage(location.hash.slice(1) || 'rooms');
         await refresh();
       }
 
@@ -3018,6 +3164,7 @@
           propList = who.properties ?? [];
           currentProp = propList[0]?.id ?? null;
           applyScope();
+          showPage(location.hash.slice(1) || 'rooms');
           await refresh();
           $('app').hidden = false;
         } catch {
