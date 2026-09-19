@@ -50,6 +50,16 @@ let exploreAvailable = false;
 let vodReady = false;
 let vodPending: Promise<void> | null = null;
 
+/**
+ * 整份片库正在重取。
+ *
+ * 只有解锁/上锁成人区会走到这里，而**解锁之后那一份大得多** ——
+ * 这条线路上五千一百多部是成人分类的，平时发下来的只有四百九十部。
+ * 所以这件事必须是「屏幕已经亮着、内容在后台长出来」，不能是「按完 PIN
+ * 对着一片黑等」。
+ */
+let catalogueLoading = false;
+
 function loadVod(): Promise<void> {
   vodPending ??= api
     .vod()
@@ -1084,17 +1094,26 @@ async function enterAdult() {
  * still get its channels, and locking must never be the thing that fails.
  */
 async function reloadCatalogue() {
-  try {
-    const live = await api.channels();
-    channels = live.channels;
-    categories = live.categories;
-  } catch (err) {
-    console.error(err);
-  }
+  catalogueLoading = true;
   // 解锁之后片库的内容不一样了，必须重新取 —— 把记忆化那份作废。
   vodPending = null;
   vodReady = false;
-  await loadVod();
+
+  // 两条一起发：它们互不相干，串着等就是白等一个来回。
+  try {
+    await Promise.all([
+      api
+        .channels()
+        .then((live) => {
+          channels = live.channels;
+          categories = live.categories;
+        })
+        .catch((err) => console.error(err)),
+      loadVod(),
+    ]);
+  } finally {
+    catalogueLoading = false;
+  }
 }
 
 /**
@@ -1145,8 +1164,17 @@ function askPin() {
 
     if (res.ok) {
       close();
-      await reloadCatalogue();
+      /*
+       * 先上屏，再取片子。
+       *
+       * 原来是 `await reloadCatalogue()` 之后才换屏：按完 PIN 之后，
+       * 屏幕上还是刚才那一层，背景视频也被键盘层遮掉了，客人对着一块
+       * 不动的东西等好几秒 —— 那份片库有五千多部，不是一眨眼的事。
+       */
       showAdultSection();
+      void reloadCatalogue().then(() => {
+        if (rerender === showAdultSection) showAdultSection();
+      });
       return;
     }
     if (res.reason === 'locked') {
@@ -1258,10 +1286,12 @@ function showAdultSection() {
       h('button', {
         class: 'btn ghost focusable',
         text: t('adult.lock'),
-        onclick: async () => {
-          await api.adultLock();
-          await reloadCatalogue();
+        onclick: () => {
+          // 回首页是立刻的。锁是本地先生效（token 当场作废），
+          // 重取那一份普通片库在后台慢慢来 —— 客人已经在首页上了。
+          void api.adultLock();
           showHome();
+          void reloadCatalogue();
         },
       }),
     ),
@@ -1280,26 +1310,53 @@ function showAdultSection() {
     );
   }
 
-  for (const cat of vodCategories.filter((c) => c.adult)) {
-    const items = films.filter((i) => i.categoryId === cat.id);
-    if (!items.length) continue;
-    body.append(
-      h(
-        'section',
-        { class: 'rail' },
+  /*
+   * 和点播页一样先上屏后填满 —— 而这里更要命：这一份有五千多部，
+   * 一次铺完是三万个节点，盒子会黑屏好几秒。
+   */
+  const queue: Array<() => void> = [];
+  const CHUNK = 12;
+
+  vodCategories
+    .filter((c) => c.adult)
+    .forEach((cat, index) => {
+      const items = films.filter((i) => i.categoryId === cat.id);
+      if (!items.length) return;
+
+      const track = h('div', { class: 'rail-track posters' });
+      body.append(
         h(
-          'div',
-          { class: 'rail-head' },
-          h('h2', { text: cat.name }),
-          h('span', { text: t('vod.titles', { n: items.length }) }),
+          'section',
+          { class: 'rail' },
+          h(
+            'div',
+            { class: 'rail-head' },
+            h('h2', { text: cat.name }),
+            h('span', { text: t('vod.titles', { n: items.length }) }),
+          ),
+          track,
         ),
-        h('div', { class: 'rail-track posters' }, ...items.map((it) => posterCard(it, showVodDetail))),
-      ),
-    );
-  }
+      );
+
+      const head = index < 2 ? items.slice(0, CHUNK) : [];
+      track.append(...head.map((it) => posterCard(it, showVodDetail)));
+      for (let i = head.length; i < items.length; i += CHUNK) {
+        const slice = items.slice(i, i + CHUNK);
+        queue.push(() => track.append(...slice.map((it) => posterCard(it, showVodDetail))));
+      }
+    });
+
+  drain(queue);
 
   if (!chans.length && !films.length) {
-    body.append(h('div', { class: 'centre' }, h('p', { class: 'muted', text: t('adult.empty') })));
+    // 还在路上和真的空是两回事，说错了客人就去找前台了。
+    body.append(
+      h(
+        'div',
+        { class: 'centre' },
+        h('p', { class: 'muted', text: catalogueLoading ? t('vod.loading') : t('adult.empty') }),
+      ),
+    );
   }
 
   rerender = showAdultSection;

@@ -38,6 +38,15 @@ const RETRY_AFTER = 6 * 3600;
 /** 后台预热同时抓几张。图床不是我们的，别把人家当自己的机器用。 */
 const MAX_PARALLEL = 4;
 
+/*
+ * 一轮最多抓多少张。
+ *
+ * 解锁成人区之后那一份片库是**五千一百多部**，一口气抓完要二十分钟不停歇。
+ * 这台机器两个核还要伺候直播和截图，所以切成几轮：这一轮抓一千五，
+ * 十分钟后的下一次请求接着抓。客人当场看到的那几十张是现抓的，不受这个限制。
+ */
+const WARM_PER_RUN = 1500;
+
 /** 多久没人看过就删。整个片库也就二三十兆，主要是防片库换了之后的陈货。 */
 const KEEP_DAYS = 60;
 
@@ -201,18 +210,19 @@ export async function warm(ids, log) {
   }
 
   warming = true;
-  log?.info({ n: todo.length }, '开始预热海报');
+  const run = todo.slice(0, WARM_PER_RUN);
+  log?.info({ n: run.length, left: todo.length - run.length }, '开始预热海报');
   let ok = 0;
   try {
-    for (let i = 0; i < todo.length; i += MAX_PARALLEL) {
-      const batch = todo.slice(i, i + MAX_PARALLEL);
+    for (let i = 0; i < run.length; i += MAX_PARALLEL) {
+      const batch = run.slice(i, i + MAX_PARALLEL);
       const got = await Promise.all(batch.map((id) => ensure(id, log).catch(() => null)));
       ok += got.filter(Boolean).length;
     }
   } finally {
     warming = false;
     warmedAt = now();
-    log?.info({ ok, of: todo.length }, '海报预热结束');
+    log?.info({ ok, of: run.length }, '海报预热结束');
   }
 }
 
