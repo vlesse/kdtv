@@ -222,7 +222,13 @@ This is the whole point of the thin-shell design — no box is touched:
 
 ```bash
 # from the workstation
-tar czf web.tgz --exclude=node_modules --exclude=dist ott-frontend/
+# 排除项别省：安卓那一半的构建产物有一百多 MB，而服务器上根本用不到 ——
+# 镜像只从 web/ 和 bff/ 构建（见 deploy/Dockerfile）。
+# 照着写全是 4MB，少写几个就是 78MB。
+tar czf web.tgz \
+  --exclude=node_modules --exclude=dist --exclude=.git \
+  --exclude=build --exclude=.gradle --exclude='*.apk' \
+  ott-frontend/
 # upload to /root, then on the server:
 cd /opt/wewatch-ott && tar xzf /root/web.tgz && docker compose up -d --build bff
 ```
