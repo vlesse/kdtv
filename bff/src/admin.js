@@ -1004,7 +1004,21 @@ export function registerAdmin(app) {
    */
   app.post('/api/admin/devices/:deviceId', async (req, reply) => {
     try {
-      const saved = rooms.saveDevice(req.pid, req.params.deviceId, req.body ?? {}, {
+      /*
+       * 前台能填房间号和备注，**不能换线路**。
+       *
+       * 这条接口是一个口子进来的：房间号、备注、线路都在同一个 body 里。
+       * 白名单放行的是「填房间号」这件事，所以线路那几格在这里剥掉 ——
+       * 不剥的话，一个会按 F12 的前台可以把某间房换成别的片单，
+       * 或者干脆把盒子解绑。
+       */
+      const patch = { ...(req.body ?? {}) };
+      if (req.who.role === 'desk') {
+        delete patch.lineUser;
+        delete patch.linePass;
+        delete patch.propertyId;
+      }
+      const saved = rooms.saveDevice(req.pid, req.params.deviceId, patch, {
         adoptInto: viewPid(req),
       });
       if (!saved) return reply.code(404).send({ error: '设备不存在' });

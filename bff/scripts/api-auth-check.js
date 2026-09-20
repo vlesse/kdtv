@@ -180,6 +180,41 @@ eq('建房间', (await call('POST', '/api/admin/rooms', { token: DESK, body: { r
 eq('办入住', (await call('POST', '/api/admin/rooms/301/checkin', { token: DESK, body: { guestName: '张三' } })).status, 200);
 eq('看总览要的那份数据', (await call('GET', '/api/admin/state', { token: DESK })).status, 200);
 
+/*
+ * 填房间号和换线路是**同一条接口**（同一个 body 里的不同字段）。
+ * 白名单放行的是前者，所以后者必须在路由里剥掉 —— 否则一个会按 F12 的
+ * 前台可以把某间房换成别的片单，或者把盒子解绑。
+ */
+{
+  // 先弄一台盒子出来：开机报到（这一条本来就不需要凭据），再由平台划给 A 店。
+  await fetch(BASE + '/api/device/hello', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ deviceId: 'check-box-1' }),
+  });
+  await call('POST', '/api/admin/devices/check-box-1?property=1', {
+    token: BOSS,
+    body: { roomId: '101', lineUser: 'house-line', linePass: 'house-pass' },
+  });
+
+  const boxes = (await call('GET', '/api/admin/rooms', { token: DESK })).data.devices ?? [];
+  if (boxes.length) {
+    const id = boxes[0].deviceId;
+    const before = boxes[0].line;
+    await call('POST', `/api/admin/devices/${id}`, {
+      token: DESK,
+      body: { roomId: '302', lineUser: 'someone-elses-line', linePass: 'x' },
+    });
+    const after = ((await call('GET', '/api/admin/rooms', { token: DESK })).data.devices ?? []).find(
+      (d) => d.deviceId === id,
+    );
+    eq('前台填得了房间号', after?.roomId, '302');
+    eq('**但线路没被他换掉**', after?.line ?? null, before ?? null);
+  } else {
+    ok('（这套环境里没有盒子，线路那一条跳过）', true);
+  }
+}
+
 // ------------------------------------------------------------ 跨店
 
 section('6. A 店的人碰不到 B 店');
