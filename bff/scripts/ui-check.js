@@ -75,6 +75,42 @@ for (const rel of PAGES) {
     `${name}：$('…') 取的 id 页面上都有${missing.length ? ` —— 缺 ${missing.join(', ')}` : ''}`,
     missing.length === 0,
   );
+
+  // ------------------------------------------------------- hidden 藏不藏得住
+  /*
+   * `el.hidden = true` 靠的是浏览器自带的 `[hidden] { display: none }`。
+   * 那是**浏览器**的样式表 —— 只要我们给同一个元素的类写了 display，
+   * 作者样式就赢了，这一句变成空话，而且**不会报任何错**。
+   *
+   * 真出过：`#app` 带着 class="wrap"，而 `.wrap { display: grid }`。
+   * 结果没登录的人打开 /admin/ 会看见登录卡片下面整个控制台的壳；
+   * 前台点了「退出」，上一份房间表和客人姓名也还留在屏幕上。
+   *
+   * 所以：只要这一页用了 hidden 属性，就必须有一条兜底规则压回去。
+   */
+  const usesHiddenAttr = /<[^>]+\shidden(\s|>|=)/.test(html) || /\.hidden\s*=/.test(js);
+  if (usesHiddenAttr) {
+    const guarded = /\[hidden\][^{]*\{[^}]*display:\s*none\s*!important/.test(html);
+
+    // 顺手指出是哪几个元素会中招，好让人知道为什么要这条规则。
+    const risky = [];
+    const styled = new Set();
+    for (const m of html.matchAll(/\.([a-zA-Z][\w-]*)[^{]*\{[^}]*display:\s*[^;}]+/g)) {
+      styled.add(m[1]);
+    }
+    for (const m of html.matchAll(/<[^>]*\sclass\s*=\s*["']([^"']+)["'][^>]*\shidden(\s|>|=)/g)) {
+      for (const c of m[1].split(/\s+/)) if (styled.has(c)) risky.push(c);
+    }
+
+    ok(
+      `${name}：hidden 真的能藏住东西${
+        !guarded && risky.length
+          ? ` —— 这些类名出现在设了 display 的规则里，压得过 hidden：${[...new Set(risky)].join(', ')}`
+          : ''
+      }`,
+      guarded,
+    );
+  }
 }
 
 console.log(`\n${'─'.repeat(52)}`);

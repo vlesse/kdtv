@@ -33,6 +33,20 @@
        * 分页之后每一页只剩一件事，地址栏带 #rooms 这样的锚 ——
        * 前台可以把「房间与设备」直接存成书签。
        */
+      /*
+       * hidden 要真的能藏住东西。
+       *
+       * 浏览器自带的是 `[hidden] { display: none }`，可它是**浏览器**的样式表；
+       * 我们这边只要给同一个元素的类写了 display（比如下面那条 .wrap），
+       * 作者样式就赢了，`el.hidden = true` 变成一句空话。
+       *
+       * 真出过，而且出在最不该出的地方：#app 带着 class="wrap"，所以**没登录
+       * 的人打开 /admin/ 会看见登录卡片下面整个控制台的壳**；前台点了「退出」，
+       * 上一份房间表和客人姓名也还留在屏幕上。数据本身是安全的（每一条接口都
+       * 要票），但屏幕上不该有这些东西。
+       */
+      [hidden] { display: none !important; }
+
       .wrap { display: grid; grid-template-columns: 236px minmax(0, 1fr); min-height: 100vh; }
 
       .side {
