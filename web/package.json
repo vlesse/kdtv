@@ -2,6 +2,11 @@
   "name": "ott-tv-web",
   "version": "1.0.0",
   "private": true,
+  "description": "KDTV 酒店电视系统 —— 电视界面（服务端下发的 web bundle）",
+  "license": "AGPL-3.0-or-later",
+  "author": "lngsuan (https://t.me/lngsuan)",
+  "homepage": "https://github.com/vlesse/kdtv",
+  "repository": { "type": "git", "url": "https://github.com/vlesse/kdtv.git" },
   "type": "module",
   "scripts": {
     "dev": "vite",

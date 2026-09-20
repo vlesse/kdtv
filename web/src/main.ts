@@ -1,3 +1,13 @@
+/*
+ * KDTV — 酒店电视系统
+ * Copyright (C) 2026 lngsuan <https://t.me/lngsuan>
+ *
+ * 按 GNU Affero General Public License v3.0 或更高版本发布。
+ * 详见根目录的 LICENSE 和 NOTICE。**改过的版本架成网络服务给别人用，
+ * 用的人就有权拿到这个版本的完整源码**（AGPL 第 13 条）。
+ * 商业授权（闭源、不公开改动）另谈：https://t.me/lngsuan
+ */
+
 import './styles.css';
 import {
   api,

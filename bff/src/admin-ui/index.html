@@ -132,7 +132,7 @@
           position: static; height: auto; flex-direction: row; flex-wrap: wrap;
           align-items: center; border-right: 0; border-bottom: 1px solid var(--line);
         }
-        .side .grp, .side .brand { display: none; }
+        .side .grp, .side .brand, #agplFoot { display: none; }
         .side-foot { margin-top: 0; padding-top: 0; }
         .navi { width: auto; }
         main { padding: 0 14px 60px; }
@@ -349,6 +349,16 @@
         <div class="side-foot">
           <div class="hint" id="whoami" style="margin:0 10px 8px"></div>
           <button class="ghost" id="logout">退出</button>
+          <!--
+            署名留在跑着的东西里，不只留在仓库里。AGPL 要求保留声明，而一份被
+            删干净的页脚本身就是证据。放在后台而不是电视上：客人不需要看见这个，
+            运营和接手的人需要。
+          -->
+          <p class="hint" id="agplFoot" style="margin:12px 10px 0; line-height:1.6">
+            KDTV · <a href="https://github.com/vlesse/kdtv" target="_blank" rel="noreferrer noopener">源码</a>
+            · AGPL-3.0<br />
+            商业授权 <a href="https://t.me/lngsuan" target="_blank" rel="noreferrer noopener">t.me/lngsuan</a>
+          </p>
         </div>
       </aside>
 

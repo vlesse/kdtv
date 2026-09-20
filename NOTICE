@@ -1,0 +1,79 @@
+KDTV — 酒店电视系统 / Hotel IPTV system
+Copyright (C) 2026 lngsuan <https://t.me/lngsuan>
+
+本项目按 **GNU Affero General Public License v3.0 或更高版本**（AGPL-3.0-or-later）
+发布，许可证全文见 LICENSE。
+
+================================================================================
+一、按 AGPL-3.0 使用 —— 可以，不用问我
+================================================================================
+
+你可以自由地用、改、部署、甚至拿去卖，条件是遵守 AGPL，其中对这套系统最要紧的
+三条：
+
+  1. **保留作者和许可声明。** LICENSE、NOTICE、以及源文件顶上的版权声明都得留着。
+     删掉它们不是「二次开发」，是违约。
+
+  2. **改了就要把源码给出去。** 不只是你分发 APK 或者代码的时候 —— AGPL 第 13 条
+     说得很清楚：**如果你把改过的版本架成网络服务给别人用，用的人就有权拿到这个
+     版本的完整源码**。这套系统的形态正好是「服务端跑在你自己机器上、别人通过
+     网络用」，所以这一条是它的核心约束，不是边角条款。
+
+  3. **衍生作品也得是 AGPL。** 你不能把它并进一个闭源产品里。
+
+================================================================================
+二、不想按 AGPL 使用 —— 那要单独谈
+================================================================================
+
+如果你想
+
+  - 把它并进闭源/专有产品，或者
+  - 以 SaaS / 托管服务的形式卖，但不打算公开你的改动，或者
+  - 去掉作者声明另行署名
+
+那 AGPL 不允许，但**商业授权可以谈**。我是唯一的版权持有人，可以另行给出条款。
+
+    联系：https://t.me/lngsuan
+
+================================================================================
+三、注明出处怎么写
+================================================================================
+
+在你的 README、关于页、或者文档里保留类似一行就够：
+
+    基于 KDTV (https://github.com/vlesse/kdtv)，作者 lngsuan，AGPL-3.0 授权。
+
+    Based on KDTV (https://github.com/vlesse/kdtv) by lngsuan, licensed
+    under AGPL-3.0.
+
+如果你改过代码，AGPL 要求你**标明改动过**，并且留下改动日期。
+
+================================================================================
+English summary
+================================================================================
+
+KDTV is a hotel set-top-box IPTV platform: an Android thin shell plus a
+server that ships the UI, with live TV, video on demand, room service,
+multi-tenant isolation and per-property billing.
+
+Licensed under AGPL-3.0-or-later (see LICENSE). You may use, modify and
+deploy it freely under those terms. Note in particular **AGPL section 13**:
+if you run a modified version as a network service, you must offer the users
+of that service the complete corresponding source code. Keep the copyright
+and licence notices intact, and state that you modified the files.
+
+If those terms do not work for you — closed-source integration, a proprietary
+or hosted product without publishing your changes, or re-branding without
+attribution — a **commercial licence is available**. I am the sole copyright
+holder and can grant separate terms:
+
+    https://t.me/lngsuan
+
+================================================================================
+四、没有担保
+================================================================================
+
+这套系统是按「现状」提供的，不带任何担保 —— 见 LICENSE 第 15、16 条。它在生产
+环境里跑过，但**你自己的部署、你自己的片源、你自己的合规责任，都是你自己的事。**
+特别是：内容许可（频道和影片的版权）、当地的广播和电信法规、以及受限板块在你所在
+辖区的合法性，都不在这份许可证的覆盖范围内，也不构成任何形式的建议。
