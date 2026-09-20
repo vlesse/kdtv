@@ -283,6 +283,64 @@ db.exec(`
 `);
 db.exec('CREATE INDEX IF NOT EXISTS idx_art_seen ON art_cache(last_hit)');
 
+/* ---------------------------------------------------------- 后台的人
+
+ * 原来进后台只有一个共用口令，没有「谁」这个概念：前台三个人共用一个密码，
+ * 出了事查不出是谁动的，人走了也没法只收回他一个人的权限。
+ *
+ * 四张表（细节见 src/adminauth.js）：
+ *   admin_users     一人一个账号，带角色（平台 / 酒店管理员 / 前台）
+ *   admin_sessions  登录换一张有期限的票，浏览器里存票不存密码
+ *   admin_audit     谁、什么时候、动了哪一家的什么（只记写操作）
+ *   admin_lockout   登录试错限速 —— 这个控制台挂在公网上，
+ *                   原来密码是可以无限次猜的
+ *
+ * `admin_users.property_id` 为 NULL = 平台账号。密码是 scrypt + 每人一个盐，
+ * 和酒店口令同一套做法。
+ */
+db.exec(`
+  CREATE TABLE IF NOT EXISTS admin_users (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    property_id INTEGER,
+    username    TEXT NOT NULL,
+    pass_hash   TEXT NOT NULL,
+    pass_salt   TEXT NOT NULL,
+    role        TEXT NOT NULL,
+    active      INTEGER NOT NULL DEFAULT 1,
+    created_at  INTEGER NOT NULL,
+    last_login  INTEGER
+  );
+  CREATE TABLE IF NOT EXISTS admin_sessions (
+    token_hash  TEXT PRIMARY KEY,
+    user_id     INTEGER,
+    property_id INTEGER,
+    role        TEXT NOT NULL,
+    label       TEXT,
+    created_at  INTEGER NOT NULL,
+    last_seen   INTEGER NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS admin_audit (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    at          INTEGER NOT NULL,
+    user_id     INTEGER,
+    username    TEXT,
+    role        TEXT,
+    property_id INTEGER,
+    method      TEXT NOT NULL,
+    path        TEXT NOT NULL,
+    summary     TEXT
+  );
+  CREATE TABLE IF NOT EXISTS admin_lockout (
+    key        TEXT PRIMARY KEY,
+    fails      INTEGER NOT NULL DEFAULT 0,
+    until      INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL
+  );
+`);
+db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_admin_user_name ON admin_users(username)');
+db.exec('CREATE INDEX IF NOT EXISTS idx_admin_session_user ON admin_sessions(user_id)');
+db.exec('CREATE INDEX IF NOT EXISTS idx_admin_audit_prop ON admin_audit(property_id, id)');
+
 /* ------------------------------------------------------------------ 面板
 
  * 一台服务器可以接好几台 XUI 面板，每家酒店各自指定用哪一台。

@@ -23,6 +23,7 @@ import * as properties from './properties.js';
 import * as previews from './previews.js';
 import * as explore from './explore.js';
 import * as art from './art.js';
+import * as adminAuth from './adminauth.js';
 import { startPreviewSweeper } from './preview-sweeper.js';
 import { initials } from './pinyin.js';
 import { PLATFORM } from './db.js';
@@ -1048,3 +1049,20 @@ startPreviewSweeper(app.log);
  */
 const artSweep = setInterval(() => art.sweep(app.log), 24 * 3600_000);
 artSweep.unref();
+
+/*
+ * 过期的登录票和半年前的操作记录。
+ *
+ * 票过期在验票时就会当场删掉，这一轮扫的是**再也没人来验的那些** ——
+ * 换了电脑、卸了浏览器的那一张，不扫就永远留在表里。
+ */
+const authSweep = setInterval(() => {
+  try {
+    const sessions = adminAuth.sweepSessions();
+    const audit = adminAuth.sweepAudit();
+    if (sessions || audit) app.log.info({ sessions, audit }, '清掉了过期的票和旧记录');
+  } catch (err) {
+    app.log.warn({ err: err.message }, '清理登录票失败');
+  }
+}, 6 * 3600_000);
+authSweep.unref();

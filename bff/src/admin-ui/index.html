@@ -304,15 +304,21 @@
     <div id="login" hidden>
       <section>
         <h2>KDTV 后台</h2>
-        <p class="hint">输入后台密码</p>
-        <input id="pw" type="password" autocomplete="current-password" placeholder="密码" />
+        <p class="hint">用自己的账号登录。没有账号就只填密码那一栏，用总口令进。</p>
+        <label for="user">用户名</label>
+        <input id="user" type="text" autocomplete="username" placeholder="没有账号就留空" />
+        <label for="pw">密码</label>
+        <input id="pw" type="password" autocomplete="current-password" placeholder="密码 / 总口令" />
         <div class="row" style="margin-top: 14px">
           <button class="primary" id="doLogin">进入</button>
+          <span class="hint" style="margin:0" id="loginState"></span>
         </div>
         <p class="note">
-          密码是服务器 <code>.env</code> 里的 <code>ADMIN_TOKEN</code>。没设过的话，
+          总口令是服务器 <code>.env</code> 里的 <code>ADMIN_TOKEN</code>。没设过的话，
           第一次启动时会自动生成一个并写进日志：<br />
-          <code>docker compose logs bff | grep -i token</code>
+          <code>docker compose logs bff | grep -i token</code><br />
+          <b>进来之后请在「账号」里给每个人建一个账号</b> —— 共用一个口令，
+          出了事查不出是谁动的，人走了也没法只收回他一个人的权限。
         </p>
       </section>
     </div>
@@ -334,10 +340,16 @@
         <div class="grp">内容与收款</div>
         <button class="navi" data-page="adult">成人板块</button>
         <button class="navi" data-page="pay">收款与计费</button>
+        <div class="grp" id="navAccountGrp">账号</div>
+        <button class="navi" data-page="users" id="navUsers">账号</button>
+        <button class="navi" data-page="audit" id="navAudit">操作记录</button>
         <div class="grp" id="navPlatformGrp" hidden>平台</div>
         <button class="navi" data-page="props" id="navProps" hidden>酒店</button>
         <button class="navi" data-page="panels" id="navPanels" hidden>面板</button>
-        <div class="side-foot"><button class="ghost" id="logout">退出</button></div>
+        <div class="side-foot">
+          <div class="hint" id="whoami" style="margin:0 10px 8px"></div>
+          <button class="ghost" id="logout">退出</button>
+        </div>
       </aside>
 
       <main>
@@ -838,6 +850,59 @@
       </section>
       </div>
 
+      <div class="page" id="page-users">
+      <section>
+        <h2>账号</h2>
+        <p class="hint">
+          <strong>一人一个账号，别共用。</strong>共用的那个口令没人记得最后是谁在用，
+          出了事查不出是谁动的，人走了也没法只收回他一个人的权限。
+        </p>
+        <p class="hint">
+          <strong>前台</strong>只能管房间和订单 —— 收款、品牌、成人板块他点不到，
+          而且不是「按钮藏起来」：服务端按角色拦，直接调接口也是 403。<br />
+          <strong>酒店管理员</strong>是这一家的全部。<strong>平台管理员</strong>是十家和面板。
+        </p>
+        <div class="row" style="margin-bottom:10px">
+          <input id="newUser" type="text" placeholder="用户名（字母数字）" style="max-width:200px" />
+          <input id="newPass" type="password" placeholder="密码，至少 8 位" style="max-width:200px" autocomplete="new-password" />
+          <select id="newRole"></select>
+          <button class="primary" id="addUser">建账号</button>
+        </div>
+        <div class="scroll">
+          <table class="tbl">
+            <thead>
+              <tr><th>用户名</th><th>角色</th><th>属于</th><th>最近登录</th><th>状态</th><th></th></tr>
+            </thead>
+            <tbody id="userRows"></tbody>
+          </table>
+        </div>
+        <p class="hint" id="userEmpty" style="margin-top:10px"></p>
+      </section>
+      </div>
+
+      <div class="page" id="page-audit">
+      <section>
+        <h2>操作记录</h2>
+        <p class="hint">
+          谁、什么时候、动了什么。<strong>只记写操作</strong> —— 读也记的话一天几千行，
+          真要查「是谁把 302 的成人区打开的」反而翻不到。密码一类的字段只记名字不记值。
+          保留半年。
+        </p>
+        <div class="row" style="margin-bottom:10px">
+          <button id="reloadAudit">刷新</button>
+          <span class="hint" style="margin:0" id="auditStat"></span>
+        </div>
+        <div class="scroll">
+          <table class="tbl">
+            <thead>
+              <tr><th>时间</th><th>谁</th><th>动作</th><th>内容</th></tr>
+            </thead>
+            <tbody id="auditRows"></tbody>
+          </table>
+        </div>
+      </section>
+      </div>
+
       <div class="page" id="page-props">
       <section id="propsSection" hidden>
         <h2>酒店</h2>
@@ -934,8 +999,16 @@
 
     <script>
       const $ = (id) => document.getElementById(id);
-      const KEY = 'wewatch.admin.token';
+      /*
+       * 存的是**会话票**，不是密码。
+       *
+       * 浏览器里存密码的问题不在「会被偷看」，而在出事之后没有补救手段：
+       * 只能改 .env 重启，还会把所有人一起踢下线。票能单独吊销、会过期。
+       */
+      const KEY = 'wewatch.admin.session';
       let token = localStorage.getItem(KEY) || '';
+      /** 我是谁：{role, username, namedAccount, property}。登录后由服务端给。 */
+      let me = null;
       let state = null;
 
       function toast(msg, bad) {
@@ -1521,6 +1594,158 @@
         $('ovFacts').replaceChildren(...facts);
       }
 
+      // --------------------------------------------------------------- 账号
+
+      let users = [];
+
+      function renderUsers() {
+        const roles = me?.role === 'platform'
+          ? { platform: '平台管理员', manager: '酒店管理员', desk: '前台' }
+          : { manager: '酒店管理员', desk: '前台' };
+        if (!$('newRole').options.length) {
+          $('newRole').replaceChildren(
+            ...Object.entries(roles).map(([v, name]) => el('option', { value: v, textContent: name })),
+          );
+          $('newRole').value = 'desk';
+        }
+
+        $('userRows').replaceChildren(
+          ...users.map((u) => {
+            const acts = el('div', { className: 'acts' });
+
+            const pw = el('button', { textContent: '改密码' });
+            pw.onclick = async () => {
+              const next = prompt('给「' + u.username + '」设一个新密码（至少 8 位）');
+              if (!next) return;
+              try {
+                const r = await api('/users/' + u.id, {
+                  method: 'POST',
+                  body: JSON.stringify({ password: next }),
+                });
+                users = r.users;
+                renderUsers();
+                toast('已改密码，他在别处的登录也一起失效了');
+              } catch (e) {
+                toast(e.message, true);
+              }
+            };
+
+            const onoff = el('button', { textContent: u.active ? '停用' : '启用' });
+            onoff.onclick = async () => {
+              try {
+                const r = await api('/users/' + u.id, {
+                  method: 'POST',
+                  body: JSON.stringify({ active: !u.active }),
+                });
+                users = r.users;
+                renderUsers();
+                toast(u.active ? '已停用' : '已启用');
+              } catch (e) {
+                toast(e.message, true);
+              }
+            };
+
+            const kick = el('button', { textContent: '踢下线' });
+            kick.title = '把他在所有地方的登录都退掉';
+            kick.onclick = async () => {
+              try {
+                await api('/users/' + u.id, {
+                  method: 'POST',
+                  body: JSON.stringify({ logoutEverywhere: true }),
+                });
+                toast('已全部退出');
+              } catch (e) {
+                toast(e.message, true);
+              }
+            };
+
+            const drop = el('button', { className: 'danger', textContent: '删除' });
+            drop.onclick = async () => {
+              if (!confirm('删掉账号「' + u.username + '」？他立刻进不来。')) return;
+              try {
+                const r = await api('/users/' + u.id, { method: 'DELETE' });
+                users = r.users;
+                renderUsers();
+                toast('已删除');
+              } catch (e) {
+                toast(e.message, true);
+              }
+            };
+
+            acts.append(pw, onoff, kick, drop);
+            return el(
+              'tr',
+              null,
+              el('td', { textContent: u.username }),
+              el('td', { textContent: u.roleName }),
+              el('td', { textContent: u.propertyId == null ? '平台' : (propList.find((p) => p.id === u.propertyId)?.name ?? ('#' + u.propertyId)) }),
+              el('td', { textContent: u.lastLogin ? ago(u.lastLogin) : '从没登录' }),
+              el('td', { textContent: u.active ? '正常' : '已停用' }),
+              el('td', null, acts),
+            );
+          }),
+        );
+        $('userEmpty').textContent = users.length
+          ? ''
+          : '还没有账号。现在进来的是总口令 —— 建一个属于自己的，然后把总口令收起来。';
+      }
+
+      $('addUser').onclick = async () => {
+        try {
+          const r = await api('/users', {
+            method: 'POST',
+            body: JSON.stringify({
+              username: $('newUser').value,
+              password: $('newPass').value,
+              role: $('newRole').value,
+            }),
+          });
+          users = r.users;
+          $('newUser').value = '';
+          $('newPass').value = '';
+          renderUsers();
+          toast('账号建好了');
+        } catch (e) {
+          toast(e.message, true);
+        }
+      };
+
+      async function loadUsers() {
+        if (me?.role === 'desk') return;
+        try {
+          users = (await api('/users')).users;
+        } catch (e) {
+          users = [];
+        }
+        renderUsers();
+      }
+
+      // ---------------------------------------------------------- 操作记录
+
+      async function loadAudit() {
+        if (me?.role === 'desk') return;
+        try {
+          const r = await api('/audit');
+          $('auditRows').replaceChildren(
+            ...r.rows.map((x) =>
+              el(
+                'tr',
+                null,
+                el('td', { textContent: when(x.at) }),
+                el('td', { textContent: (x.username || '?') + ' · ' + x.roleName }),
+                el('td', { textContent: x.method + ' ' + x.path.replace('/api/admin', '') }),
+                el('td', { textContent: x.summary || '' }),
+              ),
+            ),
+          );
+          $('auditStat').textContent = r.rows.length ? '最近 ' + r.rows.length + ' 条' : '还没有记录';
+        } catch (e) {
+          toast(e.message, true);
+        }
+      }
+
+      $('reloadAudit').onclick = loadAudit;
+
       // ------------------------------------------------------------ actions
 
       async function refresh() {
@@ -1532,6 +1757,8 @@
         void loadService();
         void loadExplore();
         void loadPay();
+        void loadUsers();
+        void loadAudit();
         if (scope === 'platform') void loadProps();
       }
 
@@ -1853,6 +2080,8 @@
         brand: '品牌与文字',
         tv: '电视端',
         adult: '成人板块',
+        users: '账号',
+        audit: '操作记录',
         pay: '收款与计费',
         props: '酒店',
         panels: '面板',
@@ -1889,6 +2118,31 @@
       // 浏览器的前进/后退也认 —— 分了页之后，返回键的意思是「上一页」。
       window.addEventListener('hashchange', () => showPage(location.hash.slice(1)));
 
+      /*
+       * 角色决定看得见哪几页。
+       *
+       * **这只是界面。**真正拦住前台改收款的是服务端那张白名单 ——
+       * 这里藏起来只是为了别让他对着一堆点不动的东西发愁。
+       */
+      function applyRole() {
+        const role = me?.role ?? 'manager';
+        const show = (id, on) => {
+          const el = $(id);
+          if (el) el.hidden = !on;
+        };
+        const deskOnly = ['navUsers', 'navAudit', 'navAccountGrp'];
+        for (const id of deskOnly) show(id, role !== 'desk');
+        for (const key of ['look', 'brand', 'tv', 'adult', 'pay', 'explore']) {
+          const btn = document.querySelector('.navi[data-page="' + key + '"]');
+          if (btn) btn.hidden = role === 'desk';
+        }
+        $('whoami').textContent = me
+          ? (me.username || '（口令登录）') + ' · ' + (me.roleName || '')
+          : '';
+        // 现在停着的这一页刚好被藏掉了，就挪回总览。
+        if (page && !pageOpen(page)) showPage('overview');
+      }
+
       function applyScope() {
         const isPlatform = scope === 'platform';
         $('navPlatformGrp').hidden = !isPlatform;
@@ -1908,6 +2162,7 @@
           renderProps();
         }
 
+        applyRole();
         const here = propList.find((p) => p.id === currentProp);
         $('pageTitle').textContent = here ? here.name : isPlatform ? 'KDTV 后台' : '后台';
         $('stat').textContent = isPlatform ? `共 ${propList.length} 家酒店` : '';
@@ -3344,23 +3599,40 @@
       }
 
       function logout() {
+        // 顺手把这张票在服务端也作废 —— 只清浏览器的话，票还能用到过期。
+        if (token) {
+          fetch('/api/admin/logout', {
+            method: 'POST',
+            headers: { Authorization: 'Bearer ' + token },
+          }).catch(() => {});
+        }
         token = '';
+        me = null;
         localStorage.removeItem(KEY);
         $('app').hidden = true;
         $('login').hidden = false;
       }
       $('logout').onclick = logout;
 
-      async function login(candidate) {
+      async function login(candidate, username) {
         const res = await fetch('/api/admin/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ token: candidate }),
+          body: username
+            ? JSON.stringify({ username, password: candidate })
+            : JSON.stringify({ token: candidate }),
         });
-        if (!res.ok) throw new Error('密码不对');
         const body = await res.json().catch(() => ({}));
-        token = candidate;
+        if (!res.ok) throw new Error(body.error || '密码不对');
+        // 存回来的票，不是刚才输的密码。
+        token = body.session;
         localStorage.setItem(KEY, token);
+        me = {
+          role: body.role,
+          roleName: { platform: '平台管理员', manager: '酒店管理员', desk: '前台' }[body.role] || '',
+          username: body.username || null,
+          namedAccount: Boolean(body.username),
+        };
         scope = body.scope === 'platform' ? 'platform' : 'property';
         propList = body.properties ?? (body.property ? [body.property] : []);
         currentProp = propList[0]?.id ?? null;
@@ -3372,24 +3644,30 @@
       }
 
       $('doLogin').onclick = async () => {
+        $('loginState').textContent = '';
         try {
-          await login($('pw').value);
+          await login($('pw').value, $('user').value.trim());
         } catch (e) {
+          // 限速的提示要留在页面上，不能用一闪而过的 toast —— 它说的是「等多久」。
+          $('loginState').textContent = e.message;
           toast(e.message, true);
         }
       };
-      $('pw').onkeydown = (e) => {
-        if (e.key === 'Enter') $('doLogin').click();
-      };
+      for (const id of ['pw', 'user']) {
+        $(id).onkeydown = (e) => {
+          if (e.key === 'Enter') $('doLogin').click();
+        };
+      }
 
       // A saved token is verified by actually using it, not trusted blindly.
       (async () => {
         if (!token) return void ($('login').hidden = false);
         try {
           // 先问「我是谁」，再决定看得到什么。
-          const who = await api('/properties');
+          const who = await api('/me');
+          me = who;
           scope = who.scope;
-          propList = who.properties ?? [];
+          propList = who.properties ?? (who.property ? [who.property] : []);
           currentProp = propList[0]?.id ?? null;
           applyScope();
           showPage(location.hash.slice(1) || 'overview');

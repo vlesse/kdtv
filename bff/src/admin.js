@@ -32,6 +32,7 @@ import * as svc from './service.js';
 import * as props from './properties.js';
 import * as panels from './panels.js';
 import * as explore from './explore.js';
+import * as auth from './adminauth.js';
 import { PLATFORM } from './db.js';
 
 /**
@@ -114,22 +115,67 @@ export function registerAdmin(app) {
     const bearer = /^Bearer\s+(.+)$/i.exec(String(header))?.[1];
     const given = bearer ?? req.headers['x-admin-token'];
 
-    if (tokenMatches(given, token)) {
+    /*
+     * 三种凭据，一个入口，**按从窄到宽的顺序认**：
+     *
+     *   会话票    控制台登录之后拿到的，背后是某一个账号（知道是谁）
+     *   平台口令  .env 里的 ADMIN_TOKEN，保底钥匙（不知道是谁）
+     *   酒店口令  某一家自己的口令（知道是哪家，不知道是谁）
+     *
+     * 后两种留着不是偷懒：一个还没建过账号的部署，砍掉它们就当场把自己
+     * 锁在门外。账号建起来之后，它们应该收进保险箱而不是发给前台。
+     */
+    const sess = auth.resolveSession(given);
+    if (sess) {
+      req.who = sess;
+      req.isPlatform = sess.role === 'platform';
+      req.property = sess.propertyId ? props.find(sess.propertyId) : null;
+      req.pid = req.isPlatform ? null : sess.propertyId;
+    } else if (tokenMatches(given, token)) {
+      req.who = { userId: null, username: null, role: 'platform', propertyId: null };
       req.isPlatform = true;
       req.property = null;
       req.pid = null;
-      return;
-    }
-
-    const p = props.authenticate(given);
-    if (p) {
+    } else {
+      const p = props.authenticate(given);
+      if (!p) return reply.code(401).send({ error: '未授权' });
+      req.who = { userId: null, username: null, role: 'manager', propertyId: p.id };
       req.isPlatform = false;
       req.property = p;
       req.pid = p.id;
-      return;
     }
 
-    return reply.code(401).send({ error: '未授权' });
+    /*
+     * 角色拦在这里，不是拦在界面上。
+     *
+     * 前台的按钮藏不藏是体验问题；**他直接 curl 打这条接口能不能成，
+     * 才是权限问题**。所以这一关在所有路由之前，按方法 + 路径的白名单过。
+     */
+    if (!auth.allowed(req.who.role, req.method, req.url)) {
+      return reply.code(403).send({ error: '你的账号没有这一项的权限' });
+    }
+  });
+
+  /*
+   * 写操作记一笔。
+   *
+   * 挂在 onResponse 上是因为这时候才知道成没成 —— 失败的尝试记下来只会
+   * 让真正要查的那一行更难找。读操作一概不记（见 adminauth.record）。
+   */
+  app.addHook('onResponse', async (req, reply) => {
+    if (!guarded(req.url) || !req.who) return;
+    try {
+      auth.record({
+        who: req.who,
+        method: req.method,
+        url: req.url,
+        body: req.body,
+        propertyId: req.pid ?? viewPid(req),
+        status: reply.statusCode,
+      });
+    } catch (err) {
+      req.log.warn({ err: err.message }, '操作记录写失败');
+    }
   });
 
   /**
@@ -167,15 +213,166 @@ export function registerAdmin(app) {
     return undefined;
   };
 
-  // Exists so the console can tell a wrong password from a broken server.
+  /**
+   * 登录。**换回来的是一张有期限的票，不是密码本身。**
+   *
+   * 浏览器里存密码的问题不在于「会被偷看」，而在于出事之后没有补救手段：
+   * 改 .env 重启是唯一的办法，而且会把所有人一起踢下线。票可以单独吊销。
+   *
+   * 两种进法：账号密码（知道是谁），或者老口令（保底）。两条路都过限速。
+   */
   app.post('/api/admin/login', async (req, reply) => {
-    const given = req.body?.token;
-    if (tokenMatches(given, token)) {
-      return { ok: true, scope: 'platform', properties: props.overview() };
+    const username = String(req.body?.username ?? '').trim().toLowerCase();
+    const given = req.body?.password ?? req.body?.token;
+
+    const ip = String(req.headers['x-forwarded-for'] ?? req.ip ?? '').split(',')[0].trim();
+    const keys = ['ip:' + ip, ...(username ? ['user:' + username] : [])];
+
+    const wait = auth.lockedFor(keys);
+    if (wait > 0) {
+      return reply.code(429).send({
+        error: '试得太多了，请 ' + Math.ceil(wait / 1000) + ' 秒后再试',
+        retryAfterMs: wait,
+      });
     }
+
+    const label = String(req.headers['user-agent'] ?? '').slice(0, 60);
+    const done = (who, extra) => {
+      auth.clearFail(keys);
+      const session = auth.startSession(who, { label });
+      return { ok: true, session, ...extra };
+    };
+
+    if (username) {
+      const u = auth.authenticate(username, given);
+      if (!u) {
+        auth.noteFail(keys);
+        return reply.code(401).send({ error: '用户名或密码不对' });
+      }
+      const scope = u.role === 'platform' ? 'platform' : 'property';
+      return done(
+        { userId: u.id, role: u.role, propertyId: u.property_id },
+        {
+          scope,
+          role: u.role,
+          username: u.username,
+          properties: scope === 'platform' ? props.overview() : undefined,
+          property: u.property_id ? props.publicProperty(props.find(u.property_id)) : undefined,
+        },
+      );
+    }
+
+    if (tokenMatches(given, token)) {
+      return done(
+        { userId: null, role: 'platform', propertyId: null },
+        { scope: 'platform', role: 'platform', properties: props.overview() },
+      );
+    }
+
     const p = props.authenticate(given);
-    if (p) return { ok: true, scope: 'property', property: props.publicProperty(p) };
+    if (p) {
+      return done(
+        { userId: null, role: 'manager', propertyId: p.id },
+        { scope: 'property', role: 'manager', property: props.publicProperty(p) },
+      );
+    }
+
+    auth.noteFail(keys);
     return reply.code(401).send({ error: '密码不对' });
+  });
+
+  /** 我是谁、能干什么。控制台每次打开先问这一条。 */
+  app.get('/api/admin/me', async (req) => ({
+    scope: req.isPlatform ? 'platform' : 'property',
+    role: req.who.role,
+    roleName: auth.ROLE_NAMES[req.who.role] ?? req.who.role,
+    username: req.who.username,
+    namedAccount: req.who.userId != null,
+    property: req.property ? props.publicProperty(req.property) : null,
+    properties: req.isPlatform ? props.overview() : undefined,
+    anyUsers: auth.anyUsers(),
+  }));
+
+  app.post('/api/admin/logout', async (req) => {
+    const header = req.headers['authorization'] ?? '';
+    auth.endSession(/^Bearer\s+(.+)$/i.exec(String(header))?.[1]);
+    return { ok: true };
+  });
+
+  // --------------------------------------------------------------- 账号
+
+  /*
+   * 谁能管谁：平台管全部，酒店管理员只管自己这一家、而且**建不出平台账号**。
+   * 前台一条都进不来（白名单里没有 /users）。
+   */
+  const manageable = (req, reply, targetPid) => {
+    if (req.isPlatform) return true;
+    if (req.who.role !== 'manager') {
+      reply.code(403).send({ error: '你的账号没有这一项的权限' });
+      return false;
+    }
+    if (targetPid != null && Number(targetPid) !== req.pid) {
+      reply.code(403).send({ error: '只能管自己这一家的账号' });
+      return false;
+    }
+    return true;
+  };
+
+  app.get('/api/admin/users', async (req, reply) => {
+    if (!manageable(req, reply, null)) return;
+    return { users: auth.listUsers(req.isPlatform ? viewPid(req) : req.pid), roles: auth.ROLE_NAMES };
+  });
+
+  app.post('/api/admin/users', async (req, reply) => {
+    const pid = req.isPlatform ? (req.body?.role === 'platform' ? null : viewPid(req)) : req.pid;
+    if (!manageable(req, reply, pid)) return;
+    if (!req.isPlatform && req.body?.role === 'platform') {
+      return reply.code(403).send({ error: '酒店管理员建不了平台账号' });
+    }
+    if (req.isPlatform && req.body?.role !== 'platform' && pid == null) {
+      return reply.code(400).send({ error: '请先在上面选一家酒店' });
+    }
+    try {
+      const user = auth.createUser({
+        username: req.body?.username,
+        password: req.body?.password,
+        role: req.body?.role,
+        propertyId: pid,
+      });
+      return { ok: true, user, users: auth.listUsers(req.isPlatform ? viewPid(req) : req.pid) };
+    } catch (err) {
+      return reply.code(err.statusCode ?? 500).send({ error: err.message });
+    }
+  });
+
+  app.post('/api/admin/users/:id', async (req, reply) => {
+    const u = auth.findUser(req.params.id);
+    if (!u) return reply.code(404).send({ error: '账号不存在' });
+    if (!manageable(req, reply, u.property_id)) return;
+    try {
+      if (req.body?.password !== undefined) auth.setPassword(u.id, req.body.password);
+      if (req.body?.active !== undefined) auth.setActive(u.id, req.body.active);
+      if (req.body?.logoutEverywhere) auth.endAllSessions(u.id);
+      return { ok: true, users: auth.listUsers(req.isPlatform ? viewPid(req) : req.pid) };
+    } catch (err) {
+      return reply.code(err.statusCode ?? 500).send({ error: err.message });
+    }
+  });
+
+  app.delete('/api/admin/users/:id', async (req, reply) => {
+    const u = auth.findUser(req.params.id);
+    if (!u) return reply.code(404).send({ error: '账号不存在' });
+    if (!manageable(req, reply, u.property_id)) return;
+    // 删自己会把自己锁在外面，而且多半是点错了。
+    if (req.who.userId === u.id) return reply.code(400).send({ error: '不能删自己' });
+    auth.removeUser(u.id);
+    return { ok: true, users: auth.listUsers(req.isPlatform ? viewPid(req) : req.pid) };
+  });
+
+  /** 操作记录。酒店只看得见自己这一家的。 */
+  app.get('/api/admin/audit', async (req, reply) => {
+    if (!manageable(req, reply, null)) return;
+    return { rows: auth.auditList(req.isPlatform ? viewPid(req) : req.pid, req.query?.limit) };
   });
 
   // --------------------------------------------------------- 旅游周边

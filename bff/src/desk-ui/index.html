@@ -187,8 +187,12 @@
     <!-- 登录 -->
     <section id="login">
       <div class="logo">KDTV</div>
-      <p>前台 · 用后台给你的密码登录</p>
+      <p>前台 · 用自己的账号登录</p>
       <form id="loginForm">
+        <label class="field" for="user">用户名</label>
+        <!-- 没给账号的场地照旧只填密码那一栏（酒店口令 / 总口令）。 -->
+        <input id="user" type="text" autocomplete="username" enterkeyhint="next" placeholder="没有账号就留空" />
+        <div style="height: 10px"></div>
         <label class="field" for="pw">密码</label>
         <!-- type=password + autocomplete：让手机的密码管理器记住它，
              前台换班的人不该每次都去问密码是什么。 -->
@@ -256,7 +260,9 @@
       (function () {
         'use strict';
 
-        var KEY = 'kdtv.desk.token';
+        // 存的是登录换回来的**票**，不是密码 —— 和后台一个规矩。
+        // 换了名字，所以旧版存的那份自然作废，下次要重新登录一次。
+        var KEY = 'kdtv.desk.session';
         var PID = 'kdtv.desk.pid';
         var token = localStorage.getItem(KEY) || '';
         var pid = localStorage.getItem(PID) || '';
@@ -700,6 +706,13 @@
         }
 
         function logout() {
+          // 让服务端也把这张票扔掉；只清手机上的话它还能用到过期。
+          if (token) {
+            fetch('/api/admin/logout', {
+              method: 'POST',
+              headers: { Authorization: 'Bearer ' + token }
+            }).catch(function () {});
+          }
           localStorage.removeItem(KEY);
           localStorage.removeItem(PID);
           token = ''; pid = ''; scope = '';
@@ -712,19 +725,20 @@
         $('loginForm').onsubmit = function (e) {
           e.preventDefault();
           var pw = $('pw').value.trim();
+          var who = $('user').value.trim();
           if (!pw) return;
           $('loginErr').classList.add('hidden');
           fetch('/api/admin/login', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ token: pw })
+            body: JSON.stringify(who ? { username: who, password: pw } : { token: pw })
           })
             .then(function (r) {
               return r.json().then(function (d) { return { ok: r.ok, d: d }; });
             })
             .then(function (res) {
               if (!res.ok) throw new Error(res.d.error || '密码不对');
-              token = pw;
+              token = res.d.session;
               scope = res.d.scope;
               localStorage.setItem(KEY, token);
               if (scope === 'property') {
