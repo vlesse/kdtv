@@ -140,6 +140,45 @@ Also worth knowing before promising a room count: a property's rooms all share
 viewers. Ours is set to 500. A line bought from an IPTV reseller is typically
 1–5, which fails on the second room.
 
+### 把整个平台换到另一台面板
+
+做过两次了（2026-09-16 搬去一台新机器、2026-09-20 又搬回来），每次都是同样
+四个地方 —— **漏掉任何一个，症状都是「能看见片单但放不出来」或者反过来**：
+
+| 改哪里 | 为什么 |
+|---|---|
+| nginx `location /stream/` 的 `proxy_pass` 和 `Host` | 盒子的播放地址落在这里，由它转给面板换回 302 |
+| `panels` 表里 `slug='default'` 那一行的 `api_base` | **真正生效的是这一行，不是环境变量** —— 默认面板只在第一次启动时从 `XUI_BASE` 建出来，之后改 `.env` 不会动它 |
+| `.env` 的 `XUI_BASE` | 给以后新建的库用；顺手保持一致，免得下次看的人被误导 |
+| `.env` 的 `XUI_DB_HOST` | 采集器**直连 MySQL**，它认的是这个，和上面那条是两码事 |
+
+改完 `docker compose up -d` 就行（两个容器都要重起，采集器的库地址在环境里）。
+
+**切之前一定要核对的两件事**：
+
+1. **分类 id 在两台面板上是不是同一套。** 成人板块勾的是 `vod:43` 这样的
+   id，不是名字。克隆出来的面板 id 会一致；各自独立建起来的**不会**，
+   切过去之后「受限分类」就会指向别的东西 —— 要么放出去，要么把正常分类锁上。
+   用 `player_api.php?action=get_vod_categories` 两边拉下来比一遍。
+2. **`XUI_BASE` 的主机名要和面板给出的台标地址一致。** `publicAsset()`
+   是比主机名来决定要不要把图重写到我们自己域名下的；不一致就不重写，
+   HTTPS 页面里混进 HTTP 图片。
+
+**不用改也不会坏的**：频道预览图（缓存键是 `面板id-流id`，默认面板这一行
+没换 id）、海报缓存（键是原图地址的哈希）、盒子（地址只有域名）、
+线路口令（两台面板上是同一个账号时）。
+
+**采集器的账本会自愈，但要推一把。** `items` 表记着「这个源条目对应面板上
+哪个流 id」。换了面板，那些 id 在新面板上不存在 —— 采集器每次会先
+`movieExists()` 确认，不存在就重新插入并更新账本，所以**不需要手工清表**。
+但增量模式只走最近几页，老条目不会被回访，得手动跑一次 full：
+
+```bash
+curl -s -H "Authorization: Bearer <token>" -H 'Content-Type: application/json' \
+  -X POST -d '{"sourceId":1,"mode":"full","maxPages":6}' \
+  http://127.0.0.1:19090/api/sync
+```
+
 ## Operating it
 
 ```bash

@@ -720,10 +720,9 @@ export function registerAdmin(app) {
     if (pid === undefined) return;
 
     // 分类来自这家酒店自己的线路 —— 两家绑不同线路时，片库本来就不一样。
-    const line = props.lineFor(props.find(pid));
-    const user = line.username;
-    const pass = line.password;
-    if (!user || !pass) {
+    const property = props.find(pid);
+    const line = props.lineFor(property);
+    if (!line.username || !line.password) {
       return reply.code(409).send({ error: '这家酒店还没有线路，先在酒店设置里绑一条' });
     }
     // 分类 id 是按面板编的，所以读分类必须走这家酒店自己那台面板 ——
