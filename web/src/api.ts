@@ -404,7 +404,8 @@ export const api = {
       `/api/pay/status/${encodeURIComponent(orderNo)}`,
     ),
 
-  menu: () => req<{ categories: { name: string; items: MenuItem[] }[] }>('/api/service/menu'),
+  menu: () =>
+    req<{ currency: string; categories: { name: string; items: MenuItem[] }[] }>('/api/service/menu'),
 
   order: (items: { id: number; qty: number }[], note?: string) =>
     req<{ ok: boolean; orderId: number; total: number; payment: PaymentOrder | null }>('/api/service/order', {

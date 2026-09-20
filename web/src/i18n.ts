@@ -673,6 +673,17 @@ export function setLang(next: Lang) {
 }
 
 /** Look up a string, filling {placeholders}. Falls back to English, then the key. */
+/**
+ * 这条文案存在吗。
+ *
+ * 给的是**运营自己填的东西**用的：菜单分类叫什么由酒店定，字典里当然没有。
+ * 没有就该原样显示他填的那个词，而不是把 `svc.cat.Breakfast` 这种 key
+ * 摆到客人眼前 —— 真出过。
+ */
+export function has(key: string): boolean {
+  return key in DICTS[current] || key in DICTS.en;
+}
+
 export function t(key: string, vars?: Record<string, string | number>): string {
   const raw = DICTS[current][key] ?? DICTS.en[key] ?? key;
   if (!vars) return raw;

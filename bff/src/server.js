@@ -654,7 +654,19 @@ app.get('/api/service/menu', async (req, reply) => {
       image: it.image,
     });
   }
-  return { categories: Object.entries(grouped).map(([name, items]) => ({ name, items })) };
+  return {
+    /*
+     * 币种跟着**菜单**走，不是跟着收款通道走 —— 那是两件事，而且本来就
+     * 可能不一致（见 service.js 的 currencyCheck：菜单印尼盾、通道美元，
+     * 一盘炒饭差点收 35000 美元）。这里要的是「这张菜单上的价格是什么钱」，
+     * 所以取菜品自己带的那个。
+     *
+     * 少了这一条，电视只能按某一种货币硬格式化 —— 真出过：后台设的是美元，
+     * 电视上印出来的是「Rp 8,5」。
+     */
+    currency: items[0]?.currency || pay.currency(pay.scopeOf('service', dev.property_id)),
+    categories: Object.entries(grouped).map(([name, items]) => ({ name, items })),
+  };
 });
 
 app.post('/api/service/order', async (req, reply) => {

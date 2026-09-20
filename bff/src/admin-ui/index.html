@@ -2637,7 +2637,9 @@
             })
           : null;
         const lineEdit = el('button', { textContent: '换', style: 'padding:2px 8px;font-size:12px' });
-        lineCell.append(lineText, pinned, ' ', lineEdit);
+        /* append() 会把 null 当成字符串 —— 没单独指定线路的那台会显示
+           「未绑定null」。真出过：待配对的盒子那一行就是这样。 */
+        lineCell.append(...[lineText, pinned, ' ', lineEdit].filter((x) => x != null));
 
         /* Changing a line is rare and consequential - it swaps the whole
            channel list for that room - so it is two deliberate fields that

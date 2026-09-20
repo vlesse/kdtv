@@ -23,13 +23,13 @@ import {
   type VodItem,
   type TvTemplate,
 } from './api';
-import { h, tint, rupiah, toast, clock } from './ui';
+import { h, tint, money, toast, clock } from './ui';
 import { createPlayback, setDefaultLiveProfile, setDiagnostics } from './hls';
 import { showPayment } from './paywall';
 import { searchView } from './search';
 import { initNav, focusFirst, onBack, grabBack } from './nav';
 import { startUpdater } from './updater';
-import { t, lang, setLang, LANGS, LANG_NAMES, pick, type Lang } from './i18n';
+import { t, has, lang, setLang, LANGS, LANG_NAMES, pick, type Lang } from './i18n';
 import { playerView } from './player';
 import { detailView, posterCard, vodPlayerView } from './vod';
 import { launcherView, type Tile } from './home';
@@ -94,6 +94,9 @@ function loadVod(): Promise<void> {
  *
  * 默认 portal：已经在用的酒店不会因为多了一套模板就变样。
  */
+/** 这家酒店的菜单用什么钱结算。菜单接口每次会带回来。 */
+let menuCurrency = 'USD';
+
 let template: TvTemplate = 'portal';
 
 let propertyName = 'KDTV';
@@ -1413,7 +1416,7 @@ async function showService() {
       'div',
       { class: 'cartbar' },
       h('strong', { text: t('svc.items', { n: count }) }),
-      h('span', { class: 'muted', text: rupiah(total) }),
+      h('span', { class: 'muted', text: money(total, menuCurrency) }),
       h('span', { class: 'spacer' }),
       h('button', { class: 'btn ghost focusable', text: t('svc.clear'), onclick: () => { cart.clear(); refresh(); } }),
       h('button', { class: 'btn focusable', text: t('svc.order'), onclick: submit }),
@@ -1441,7 +1444,7 @@ async function showService() {
       if (res.payment) {
         showPayment(res.payment, { title: t('pay.orderPay', { id: res.orderId }) });
       } else {
-        toast(t('svc.ordered', { id: res.orderId, total: rupiah(res.total) }));
+        toast(t('svc.ordered', { id: res.orderId, total: money(res.total, menuCurrency) }));
       }
     } catch (err) {
       toast(t('svc.orderFail'));
@@ -1460,7 +1463,8 @@ async function showService() {
   }
 
   try {
-    const { categories: cats } = await api.menu();
+    const { categories: cats, currency } = await api.menu();
+    menuCurrency = currency || menuCurrency;
     const { notices } = await api.notices().catch(() => ({ notices: [] as any[] }));
 
     if (notices.length) {
@@ -1484,7 +1488,13 @@ async function showService() {
 
     for (const cat of cats) {
       body.append(
-        h('div', { class: 'rail-head' }, h('h2', { text: t(`svc.cat.${cat.name}`) })),
+        h(
+          'div',
+          { class: 'rail-head' },
+          // 分类名是酒店在后台自己填的。字典里只有当年那三个印尼分类，
+          // 别的都会原样变成「svc.cat.Breakfast」摆到客人眼前 —— 真出过。
+          h('h2', { text: has(`svc.cat.${cat.name}`) ? t(`svc.cat.${cat.name}`) : cat.name }),
+        ),
         h(
           'div',
           { class: 'grid', style: 'margin-bottom:1.5rem' },
@@ -1508,7 +1518,10 @@ async function showService() {
               // A second line in the box's own language: dormitory staff and
               // residents rarely read the same one.
               secondName(it.name) ? h('div', { class: 'svc-zh', text: secondName(it.name) }) : null,
-              h('div', { class: 'svc-price' + (it.price ? '' : ' free'), text: rupiah(it.price) }),
+              h('div', {
+                class: 'svc-price' + (it.price ? '' : ' free'),
+                text: money(it.price, it.currency || menuCurrency),
+              }),
               h('div', { class: 'qty' }),
             ),
           ),
@@ -1517,7 +1530,7 @@ async function showService() {
     }
     focusFirst(screen);
   } catch (err) {
-    body.append(h('div', { class: 'centre' }, h('p', { class: 'muted', text: 'Menu tidak tersedia.' })));
+    body.append(h('div', { class: 'centre' }, h('p', { class: 'muted', text: t('svc.menuFail') })));
     console.error(err);
   }
 }

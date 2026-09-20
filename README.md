@@ -26,11 +26,34 @@
 **视频不经过 KDTV 服务器。** 面板只回一个 302，盒子拿着它直接去上游取 ——
 否则这台服务器的带宽就是整个系统的天花板。只有元数据走我们。
 
+## 长什么样
+
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshots/tv-home.webp" alt="首页"><br><sub><b>首页</b> —— 底部导航每格两行：英文 + 客人选的语言</sub></td>
+<td width="50%"><img src="docs/screenshots/tv-live.webp" alt="直播"><br><sub><b>直播</b> —— 卡片上那段会动的画面是预览图，不是第二条流</sub></td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/tv-vod.webp" alt="点播"><br><sub><b>点播</b> —— 海报全部走我们自己的缓存</sub></td>
+<td><img src="docs/screenshots/tv-vod-player.webp" alt="点播播放器"><br><sub><b>快进</b> —— 进度条是可聚焦元素，数字键跳片长百分比</sub></td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/admin-rooms.webp" alt="后台房间与设备"><br><sub><b>后台</b> —— 一个房间就是一个用户</sub></td>
+<td><img src="docs/screenshots/desk-rooms.webp" alt="前台手机页"><br><sub><b>前台手机页</b> —— 站着用，一只手</sub></td>
+</tr>
+</table>
+
+**[全部截图 →](docs/界面截图.md)**（电视、后台、前台、装机页，共 24 张）
+
+> 截图里的酒店、房号、住客、订单、账号**全是编的**；成人板块那两张
+> **在页面里就打了码**。说明见那一页开头。
+
 ## 从哪看起
 
 | 想知道 | 看 |
 | --- | --- |
 | **这是什么、怎么运转、要改一件事该动哪个文件** | **[docs/系统总览.md](docs/系统总览.md)** ← 接手先看这个 |
+| 各个界面长什么样 | [docs/界面截图.md](docs/界面截图.md) |
 | 生意怎么转：从进一台盒子到客人看电视到钱进账 | [docs/业务流程.md](docs/业务流程.md)（面向运营） |
 | 怎么部署、线上是什么样、踩过哪些坑 | [deploy/DEPLOY.md](deploy/DEPLOY.md) |
 | 换原生播放内核值不值 | [shell/probe/RESULTS.md](shell/probe/RESULTS.md) |
@@ -49,7 +72,8 @@ shell/
   app/        安卓薄壳 APK（约 180 行 Kotlin，就是一个 WebView）
   probe/      播放引擎实测工装（不出包）
 deploy/       Docker、nginx、部署文档
-docs/         系统总览、业务流程
+docs/         系统总览、业务流程、界面截图
+  screenshots/  截图（示范数据）
 ```
 
 影片和剧集由 `xui-collector`（另一个仓库）从资源站采进面板 ——
