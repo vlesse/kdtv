@@ -1,8 +1,20 @@
 # Production deployment — ott.example.com
 
-> 文中的 `<APP_HOST>`、`<PANEL_HOST>`、`<PANEL_PATH>` 是占位符 —— 真实地址在本机的
-> `deploy/SECRETS.local.md`，那个文件不进 git。面板的后台路径本身就是一道锁，
-> 服务器 IP 也没有理由公开。
+> **文中所有 `<...>` 和 `example.com` 都是占位符。** 真实的域名、IP、面板后台路径、
+> 线路口令、套餐编号在本机的 `deploy/SECRETS.local.md` 里，那个文件（连同任何
+> `*.local.md`）不进 git。面板的后台路径本身就是一道锁，服务器地址也没有理由
+> 公开 —— 这份文档同时是一张「后台在哪、采集器在哪」的地图，把地图和门牌号
+> 放在一起才是问题。
+>
+> | 占位符 | 是什么 |
+> |---|---|
+> | `ott.example.com` | 对外的那个域名，盒子、后台、装机页都在它下面 |
+> | `<APP_HOST>` | 跑 BFF / 电视界面 / 采集器的那台机器 |
+> | `<PANEL_HOST>` `<PANEL_PATH>` | XUI 面板的机器，和它的后台访问码 |
+> | `<LINE_USER>` | 面板上那条线路的账号（口令同在 SECRETS.local.md） |
+> | `<LIVE_BQ>` `<VOD_BQ>` | 直播套餐、点播套餐的编号 |
+> | `<keystore 目录>` | APK 签名钥匙放在哪（**不在本仓库，也不在项目目录里**） |
+> | `example-upstream` / `example-cdn` | 上游的流媒体 CDN 和图床 —— 具体是哪家不重要，重要的是「第三方、可能没有 TLS、可能不给 CORS 头」 |
 
 
 Live since 2026-09-09.
@@ -30,8 +42,9 @@ changed.
 | Line | `<LINE_USER>`, 500 connections, bouquets `[<LIVE_BQ>,<VOD_BQ>]` |
 | DB user | `collector`@`<APP_HOST>`, SELECT/INSERT/UPDATE/DELETE on `xui` only |
 
-The live bouquet (the 91 channels) is shared with the existing lines and
-was not edited — the fleet line simply subscribes to it alongside the new one.
+The live bouquet (the 91 channels) is shared with the panel's existing lines
+and was not edited — the fleet line simply subscribes to it alongside the new
+one.
 
 ## Why playback is proxied
 
@@ -920,16 +933,15 @@ that the panel's own cache cron picks it up within five minutes.
 
 ## Worth knowing
 
-- **The panel's MariaDB is open to the internet.** `ufw` is inactive on
-  <PANEL_HOST> and 3306 accepts connections from anywhere; it already had
-  remote grants for two AWS addresses before this work. The new account is
-  pinned to `<APP_HOST>`, but the port itself should be firewalled to just
-  the addresses that need it.
-- **The panel is a 2 GB box with ~560 MB free** and it now carries roughly
-  fifty times the streams it did. It was unbothered by the first few hundred
-  titles; watch it before collecting tens of thousands.
-- The GCP box had **7.4 GB free disk** after the images were built, and about
-  20 GB of reclaimable Docker build cache from other projects if it gets tight.
+- **采集器直连面板的 MySQL，所以 3306 必须只对应用机开。** 帐号本身是按来源
+  地址钉死的（`collector`@`<APP_HOST>`，只给 `xui` 库的增删改查），但**光靠
+  grant 不够** —— 端口该在防火墙上只放通需要它的那几个地址。装面板的镜像默认
+  往往既不开 `ufw` 也不限 `bind-address`，接手时先去确认这一条。
+- **面板机器比想象的小。** 2GB 内存的机器，片库从几百涨到几万之后
+  `cache_engine` 每五分钟重建一次聚合缓存，那一下是真的重。灌大批量之前先看
+  内存和磁盘。
+- 应用机是和别的项目共用的，磁盘要盯着（见下面「磁盘」一节）。Docker 的构建
+  缓存通常能回收出十几个 G。
 
 ## Scenery behind the lists
 
@@ -1105,15 +1117,34 @@ signatures do not match newer version
 所以签名必须在铺货之前定下来，现在定了：
 
 ```
-keystore : <keystore 目录>/release.jks      （不在项目目录里）
+keystore : <keystore 目录>/release.jks   （不在项目目录里；真实路径见 SECRETS.local.md）
 口令     : <keystore 目录>/keystore.properties
-别名     : wewatch
+别名     : <alias>
 SHA-256  : EA:61:40:E4:AA:F2:8C:D9:87:79:CA:82:15:6E:06:D7:C7:35:B1:F5:8B:3A:38:64:2A:35:A7:08:15:36:3E:27
 有效期   : 30 年
 ```
 
+（证书指纹本身不是秘密 —— 谁拿到已发布的 APK 都能算出来。留着是为了能核对
+「手上这个包是不是我们签的」。）
+
 **钥匙丢了就再也发不出能覆盖升级的包。** 它故意放在项目目录之外 —— 每次部署都
 会把项目目录整个打包传到服务器，签名钥匙没有任何理由出现在那里面。
+
+构建时按这个顺序找它（见 `shell/app/build.gradle.kts`）：
+
+1. `-PkeystoreProps=<绝对路径>`
+2. 环境变量 `KDTV_KEYSTORE_PROPS`
+3. 仓库根上的 `keystore.properties`（已 gitignore）
+
+**推荐把真实路径写进 `~/.gradle/gradle.properties`** —— 那个文件在仓库外面，
+不会被打进任何部署包，写一次之后 `./gradlew assembleRelease` 不用带参数：
+
+```properties
+keystoreProps=<keystore 目录>/keystore.properties
+```
+
+三处都没有就**出不签名的包**，装的时候会被系统拒掉。这是故意的：比悄悄用 debug
+钥匙签出去、等到第一次升级才发现整车队升不了，要响得多。
 
 出包：
 

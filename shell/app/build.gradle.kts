@@ -8,10 +8,17 @@ plugins {
 /**
  * Release signing.
  *
- * The key lives OUTSIDE this directory (<keystore 目录>) on
- * purpose: everything under the project root gets tarred up and shipped to
- * the server on every deploy, and a signing key has no business being
- * there. Point `keystorePropsFile` elsewhere with -PkeystoreProps=... .
+ * The key lives OUTSIDE this directory on purpose: everything under the
+ * project root gets tarred up and shipped to the server on every deploy, and
+ * a signing key has no business being there. Where it actually is, is not in
+ * this repository. Point at it either way:
+ *
+ *   ./gradlew assembleRelease -PkeystoreProps=/abs/path/keystore.properties
+ *
+ * or, better, one line in ~/.gradle/gradle.properties - outside the repo, so
+ * no deploy tarball ever contains it - and then build with no flags at all:
+ *
+ *   keystoreProps=/abs/path/keystore.properties
  *
  * Signature identity is forever. Every box that has the app installed can
  * only be upgraded by another APK signed with THIS key - a differently
@@ -19,8 +26,13 @@ plugins {
  * That is why a trial must not go out signed with the debug key.
  */
 val keystoreProps = Properties().apply {
+    // Last resort is a gitignored keystore.properties next to settings.gradle
+    // (i.e. shell/). Missing is not an error here: the release build then
+    // comes out unsigned, which fails loudly at install time instead of
+    // quietly shipping the wrong signing identity.
     val path = (project.findProperty("keystoreProps") as String?)
-        ?: "<keystore 目录>/keystore.properties"
+        ?: System.getenv("KDTV_KEYSTORE_PROPS")
+        ?: rootProject.file("keystore.properties").absolutePath
     val f = file(path)
     if (f.exists()) f.inputStream().use { load(it) }
 }
