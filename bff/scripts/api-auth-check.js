@@ -269,6 +269,56 @@ ok('记下了前台办的那次入住', audit.data.rows.some((r) => r.path.inclu
 ok('**没记读操作**', audit.data.rows.every((r) => r.method !== 'GET'));
 ok('**密码不入库**', audit.data.rows.every((r) => !String(r.summary).includes('pass-2026')));
 
+// ------------------------------------------------------------ 编码绕过
+
+section('9. 把路径编码一下也绕不过门卫');
+
+/*
+ * 路由器匹配之前会解开百分号编码：`/api/%61dmin/rooms` 在它眼里就是
+ * `/api/admin/rooms`。门卫要是拿原始 URL 去比前缀，这一类写法就直接漏过去。
+ *
+ * 真出过：不带任何凭据列出所有盒子、把任意一台改到任意线路和房间。
+ * 所以这里挨个拿编码过的写法去撞，**每一种都得是 401/403，不能是 200**。
+ */
+const sneaky = [
+  ['GET', '/api/%61dmin/properties'],
+  ['GET', '/%61pi/admin/properties'],
+  ['GET', '/api/%61dmin/rooms?property=1'],
+  ['GET', '/api/admin/%72ooms?property=1'],
+  ['GET', '/api/devic%65/list'],
+  ['GET', '/api/device/%6cist'],
+  ['POST', '/api/devic%65/bind', { deviceId: 'check-box-1', lineUser: 'hijack', linePass: 'x', roomId: '666' }],
+  ['POST', '/api/%61dmin/users', { username: 'sneak', password: 'sneak-pass-2026', role: 'platform' }],
+];
+for (const [m, p, body] of sneaky) {
+  const r = await call(m, p, { body });
+  ok(`**没凭据 ${m} ${p}**`, r.status === 401, `实际 ${r.status}`);
+}
+
+// 盒子真的没被改掉，账号也真的没建出来
+const box = ((await call('GET', '/api/admin/rooms?property=1', { token: BOSS })).data.devices ?? []).find(
+  (d) => d.deviceId === 'check-box-1',
+);
+ok('**编码过的 bind 没能改掉那台盒子的线路**', box?.line !== 'hijack', `线路变成了 ${box?.line}`);
+const sneakLogin = await call('POST', '/api/admin/login', {
+  body: { username: 'sneak', password: 'sneak-pass-2026' },
+});
+ok('**没能凭空建出一个平台账号**', !sneakLogin.data?.session);
+
+// 登录了的人也一样：前台用编码写法去够收款，管理员用编码写法去够平台那一摊。
+await call('POST', `/api/admin/users/${deskId}`, { token: BOSS, body: { active: true } });
+const DESK3 = await login('desk01');
+for (const [who, token, m, p] of [
+  ['前台', DESK3, 'GET', '/api/admin/%70ay'],
+  ['前台', DESK3, 'POST', '/api/admin/%61dult'],
+  ['前台', DESK3, 'GET', '/api/admin/%75sers'],
+  ['管理员', ANNA, 'GET', '/api/admin/%70roperties'],
+  ['管理员', ANNA, 'GET', '/api/admin/%70anels'],
+]) {
+  const r = await call(m, p, { token, body: m === 'POST' ? { enabled: true } : undefined });
+  ok(`**${who} ${m} ${p}**`, r.status === 403, `实际 ${r.status}`);
+}
+
 // ------------------------------------------------------------ 结果
 
 console.log('\n' + '─'.repeat(52));

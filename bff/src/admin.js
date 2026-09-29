@@ -89,10 +89,27 @@ export function registerAdmin(app) {
    * room numbers - on a public domain. Neither is called by the television app
    * or the console, so closing them breaks nothing and shuts a real door.
    */
-  const guarded = (url) =>
-    url.startsWith('/api/admin/') ||
-    url.startsWith('/api/device/bind') ||
-    url.startsWith('/api/device/list');
+  const guarded = (route) =>
+    route.startsWith('/api/admin/') ||
+    route === '/api/device/bind' ||
+    route === '/api/device/list';
+
+  /**
+   * 这一次请求**实际会进哪一条路由**。
+   *
+   * 门卫只能按这个认，**不能按 `req.url`**。`req.url` 是客人送来的原样字符串，
+   * 而路由器匹配之前会把百分号编码解开：`/api/%61dmin/rooms` 在路由器眼里就是
+   * `/api/admin/rooms`，在 `startsWith('/api/admin/')` 眼里却不是。
+   *
+   * 真出过，而且是整个后台最大的一个洞：把路径里随便一个字母写成 `%xx`，
+   * 鉴权钩子就直接放行 —— 不带任何凭据列出所有盒子、把任意一台改到任意线路
+   * 和房间。后台的大多数接口当时是因为拿不到身份而 500，**那是侥幸，不是设计**。
+   *
+   * `routeOptions.url` 是注册时写的那个模式（`/api/admin/rooms/:roomId`），
+   * 是路由器已经选定要跑的那一条，客人没法伪造。没匹配上的请求它是空的，
+   * 自然也就不归门卫管 —— 后面会是 404。
+   */
+  const routeOf = (req) => req.routeOptions?.url ?? '';
 
   /**
    * 谁在敲门。
@@ -108,8 +125,9 @@ export function registerAdmin(app) {
    * `req.pid` 是给下面每个路由用的：平台是 null（不限制），酒店是它自己的 id。
    */
   app.addHook('onRequest', async (req, reply) => {
-    if (!guarded(req.url)) return;
-    if (req.url === '/api/admin/login') return;
+    const route = routeOf(req);
+    if (!guarded(route)) return;
+    if (route === '/api/admin/login') return;
 
     const header = req.headers['authorization'] ?? '';
     const bearer = /^Bearer\s+(.+)$/i.exec(String(header))?.[1];
@@ -151,7 +169,10 @@ export function registerAdmin(app) {
      * 前台的按钮藏不藏是体验问题；**他直接 curl 打这条接口能不能成，
      * 才是权限问题**。所以这一关在所有路由之前，按方法 + 路径的白名单过。
      */
-    if (!auth.allowed(req.who.role, req.method, req.url)) {
+    // 同一个理由：按路由模式判，不按原始 URL。白名单的正则写的是
+    // `/api/admin/rooms/[^/]+/checkin`，模式 `/api/admin/rooms/:roomId/checkin`
+    // 一样对得上 —— 而 `/api/admin/%70roperties` 这种写法从此对不上任何东西。
+    if (!auth.allowed(req.who.role, req.method, route)) {
       return reply.code(403).send({ error: '你的账号没有这一项的权限' });
     }
   });
@@ -163,7 +184,7 @@ export function registerAdmin(app) {
    * 让真正要查的那一行更难找。读操作一概不记（见 adminauth.record）。
    */
   app.addHook('onResponse', async (req, reply) => {
-    if (!guarded(req.url) || !req.who) return;
+    if (!guarded(routeOf(req)) || !req.who) return;
     try {
       auth.record({
         who: req.who,
