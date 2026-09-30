@@ -412,15 +412,52 @@ function seedFirstProperty() {
   db.prepare(
     'INSERT INTO properties (id, slug, name, active, created_at) VALUES (1, ?, ?, 1, ?)',
   ).run('house', name, Math.floor(Date.now() / 1000));
+
+  /*
+   * 存量的盒子、菜单、订单、通知都归第一家 —— **只在这一次**。
+   *
+   * 这是从单店版升级上来的那一刻做的事：那时候的数据本来就只属于一家。
+   * 原来这几行写在函数外面、**每次启动都跑**，于是它不再是迁移，而是一个洞：
+   * 谁拿浏览器打开电视界面都会留下一台停在配对码的盒子，服务一重启它就被
+   * 扫进第一家，它下一次报到就按第一家拿到默认线路 —— 没人配对就激活了。
+   * 每次部署都会扫一遍。
+   */
+  for (const t of ['devices', 'service_items', 'orders', 'notices', 'media']) {
+    db.prepare(`UPDATE ${t} SET property_id = 1 WHERE property_id IS NULL`).run();
+  }
 }
 
 seedFirstProperty();
 
-// 存量的盒子、菜单、订单、通知都归第一家。
-if (db.prepare('SELECT COUNT(*) n FROM properties').get().n > 0) {
-  const first = db.prepare('SELECT MIN(id) id FROM properties').get().id;
-  for (const t of ['devices', 'service_items', 'orders', 'notices', 'media']) {
-    db.prepare(`UPDATE ${t} SET property_id = ? WHERE property_id IS NULL`).run(first);
+/*
+ * 把历次启动误扫进第一家、却从来没配对过的盒子放回去（只做一次）。
+ *
+ * 判据是「什么都没有」：没房间、没线路、没单独指定过线路、没成人授权、没买过
+ * 观看权。这样的盒子现在本来就看不了东西（没线路就没激活），放回去只是让它
+ * 回到配对码那一屏，而不是等它下次报到时被自动激活。真被人划过、配过的盒子
+ * 至少占一样，不会被碰到。
+ */
+{
+  const DONE = 'migrations.unsweepDevices';
+  const done = db.prepare('SELECT 1 FROM settings WHERE property_id = 0 AND key = ?').get(DONE);
+  if (!done) {
+    const r = db
+      .prepare(
+        `UPDATE devices SET property_id = NULL
+          WHERE property_id IS NOT NULL
+            AND room_id IS NULL
+            AND line_user IS NULL
+            AND COALESCE(line_pinned, 0) = 0
+            AND COALESCE(adult_allowed, 0) = 0
+            AND COALESCE(content_until, 0) = 0`,
+      )
+      .run();
+    db.prepare('INSERT INTO settings (property_id, key, value, updated_at) VALUES (0, ?, ?, ?)').run(
+      DONE,
+      String(r.changes),
+      Math.floor(Date.now() / 1000),
+    );
+    if (r.changes) console.log(`[db] 放回了 ${r.changes} 台被启动迁移误扫进第一家、从没配对过的盒子`);
   }
 }
 

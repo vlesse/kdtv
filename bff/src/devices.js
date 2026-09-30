@@ -77,6 +77,12 @@ export function hello({ deviceId, mac, label }) {
     db.prepare('UPDATE devices SET last_seen = ?, mac = COALESCE(?, mac) WHERE device_id = ?')
       .run(now(), mac ?? null, deviceId);
     dev = getDevice(deviceId);
+    // 没归属、也没有配对码的盒子（比如被放回去的那些），电视上会显示「------」，
+    // 前台没法配。补一个。
+    if (!dev.property_id && !dev.code) {
+      db.prepare('UPDATE devices SET code = ? WHERE device_id = ?').run(freshCode(), deviceId);
+      dev = getDevice(deviceId);
+    }
   }
 
   /*

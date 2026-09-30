@@ -29,21 +29,40 @@ const eq = (name, a, b) =>
   ok(name, Object.is(a, b), `期望 ${JSON.stringify(b)}，实际 ${JSON.stringify(a)}`);
 const section = (t) => console.log(`\n── ${t}`);
 
-const child = spawn(process.execPath, [join(here, '..', 'src', 'server.js')], {
-  env: {
-    ...process.env,
-    DB_FILE: join(dir, 'check.db'),
-    MEDIA_DIR: join(dir, 'media'),
-    ADMIN_TOKEN: TOKEN,
-    PORT: String(PORT),
-    LOG_LEVEL: 'silent',
-    // 开机报到的新建限速压小，第 10 节才测得出来（线上是 300/小时）。
-    NEW_DEVICES_PER_HOUR: '8',
-  },
-  stdio: ['ignore', 'ignore', 'pipe'],
-});
 let stderr = '';
-child.stderr.on('data', (b) => (stderr += b.toString()));
+const startServer = () => {
+  const c = spawn(process.execPath, [join(here, '..', 'src', 'server.js')], {
+    env: {
+      ...process.env,
+      DB_FILE: join(dir, 'check.db'),
+      MEDIA_DIR: join(dir, 'media'),
+      ADMIN_TOKEN: TOKEN,
+      PORT: String(PORT),
+      LOG_LEVEL: 'silent',
+      // 开机报到的新建限速压小，第 10 节才测得出来（线上是 300/小时）。
+      NEW_DEVICES_PER_HOUR: '8',
+      // 这套自检要能「激活」盒子，所以给一条平台默认线路 —— 线上就是这样配的，
+      // 也正是这样，「重启把陌生盒子扫进第一家」才会变成自动激活（第 13 节）。
+      DEFAULT_LINE_USER: 'platform-line',
+      DEFAULT_LINE_PASS: 'platform-pass',
+    },
+    stdio: ['ignore', 'ignore', 'pipe'],
+  });
+  c.stderr.on('data', (b) => (stderr += b.toString()));
+  return c;
+};
+let child = startServer();
+
+/** 同一个库、同一个端口，把服务停掉再起来 —— 测「重启之后」的行为。 */
+async function restartServer() {
+  const old = child;
+  await new Promise((r) => {
+    old.once('exit', r);
+    old.kill();
+  });
+  child = startServer();
+  return waitUp();
+}
 
 function stop(code) {
   child.kill();
@@ -389,6 +408,43 @@ section('12. 出错的时候说人话、状态码说实话');
     typeof body.error === 'string' && body.error !== 'Bad Request' && body.error.length > 10,
     JSON.stringify(body),
   );
+}
+
+// ------------------------------------------------------------ 重启
+
+section('13. 服务重启不会把陌生盒子变成激活的');
+
+/*
+ * 真出过：启动迁移「把没归属的盒子都归第一家」每次启动都跑。谁拿浏览器打开
+ * 电视界面留下的那台盒子，重启一次就进了第一家，下次报到按第一家拿到默认
+ * 线路 —— 没人配对就激活了。每次部署都扫一遍。
+ */
+{
+  const helloJson = async (id) =>
+    (await fetch(BASE + '/api/device/hello', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deviceId: id }),
+    })).json();
+
+  // 第 10 节把「同一来源每小时新建几台」刷满了；那张表在内存里，重启一次就清了。
+  ok('先重启一次，清掉第 10 节刷满的新建限速', await restartServer(), stderr.slice(-400));
+
+  const before = await helloJson('stray-browser-9');
+  eq('陌生盒子第一次来：没激活', before.activated, false);
+  ok('陌生盒子第一次来：有配对码', /^\d{6}$/.test(String(before.pairingCode)));
+
+  ok('服务重启得起来', await restartServer(), stderr.slice(-400));
+
+  const after = await helloJson('stray-browser-9');
+  eq('**重启之后它还是没激活**', after.activated, false);
+  ok('**重启之后它还有配对码**（没被扫进哪一家）', /^\d{6}$/.test(String(after.pairingCode)), JSON.stringify(after));
+  eq(
+    '**拿它去要频道表，还是进不去**',
+    (await fetch(BASE + '/api/channels', { headers: { 'X-Device-Id': 'stray-browser-9' } })).status,
+    403,
+  );
+  eq('配好的盒子重启之后照样能用', (await call('GET', '/api/admin/me', { token: BOSS })).status, 200);
 }
 
 // ------------------------------------------------------------ 结果
