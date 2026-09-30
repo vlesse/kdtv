@@ -385,7 +385,7 @@ async function boot() {
             h('div', { class: 'kicker' }, h('span', { class: 'dot' }), t('activate.kicker')),
             h('h1', { style: 'margin:.75rem 0', text: t('activate.title') }),
             h('div', { class: 'code', text: session.pairingCode ?? '------' }),
-            h('p', { class: 'muted', text: t('activate.hint') }),
+            h('p', { class: 'muted', text: t(session.rekey ? 'activate.rekey' : 'activate.hint') }),
             h('button', { class: 'btn focusable', 'data-autofocus': '', text: t('activate.refresh'), onclick: boot }),
           ),
         ),

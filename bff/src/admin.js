@@ -26,6 +26,7 @@ import * as media from './media.js';
 import * as adult from './adult.js';
 import * as xui from './xui.js';
 import * as rooms from './rooms.js';
+import { confirmRekey } from './devices.js';
 import * as pay from './pay.js';
 import * as billing from './billing.js';
 import * as svc from './service.js';
@@ -1060,6 +1061,21 @@ export function registerAdmin(app) {
    * re-registers on its next boot, which is why the console says so rather
    * than calling this "delete".
    */
+  /*
+   * 电视上显示「请前台重新确认」和一个码：这台盒子拿着一把服务端不认识的
+   * 钥匙（清过应用数据、重装过，或者是别人拿着它的设备号来试）。
+   * 前台照着**眼前这台电视上**的码点确认，那把钥匙就成了这台盒子的钥匙。
+   * 前台也能做 —— 这是房间里的事，不该每次都去找管理员。
+   */
+  app.post('/api/admin/devices/:deviceId/rekey', async (req, reply) => {
+    const r = confirmRekey(req.pid, req.params.deviceId, req.body?.code);
+    if (r === 'no-device') return reply.code(404).send({ error: '设备不存在' });
+    if (r === 'bad-code') {
+      return reply.code(400).send({ error: '码不对，或者已经过期了 —— 以电视上现在显示的为准' });
+    }
+    return { ok: true, ...rooms.roster(viewPid(req), { includeUnassigned: req.isPlatform }) };
+  });
+
   app.delete('/api/admin/devices/:deviceId', async (req, reply) => {
     if (!rooms.removeDevice(req.pid, req.params.deviceId)) {
       return reply.code(404).send({ error: '设备不存在' });

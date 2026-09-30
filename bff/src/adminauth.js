@@ -49,6 +49,8 @@ export const ROLE_NAMES = {
 const DESK_ALLOWED = [
   ['GET', /^\/api\/admin\/(me|state|rooms|service|notices)$/],
   ['POST', /^\/api\/admin\/devices\/[^/]+$/],
+  // 电视在等前台对着码重新确认钥匙 —— 房间里的事，前台能做（见 devices.js）。
+  ['POST', /^\/api\/admin\/devices\/[^/]+\/rekey$/],
   ['POST', /^\/api\/admin\/rooms$/],
   ['DELETE', /^\/api\/admin\/rooms\/[^/]+$/],
   ['POST', /^\/api\/admin\/rooms\/[^/]+\/(checkin|checkout)$/],

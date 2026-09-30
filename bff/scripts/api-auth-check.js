@@ -30,10 +30,11 @@ const eq = (name, a, b) =>
 const section = (t) => console.log(`\n── ${t}`);
 
 let stderr = '';
-const startServer = () => {
+const startServer = (extraEnv = {}) => {
   const c = spawn(process.execPath, [join(here, '..', 'src', 'server.js')], {
     env: {
       ...process.env,
+      ...extraEnv,
       DB_FILE: join(dir, 'check.db'),
       MEDIA_DIR: join(dir, 'media'),
       ADMIN_TOKEN: TOKEN,
@@ -54,13 +55,13 @@ const startServer = () => {
 let child = startServer();
 
 /** 同一个库、同一个端口，把服务停掉再起来 —— 测「重启之后」的行为。 */
-async function restartServer() {
+async function restartServer(extraEnv = {}) {
   const old = child;
   await new Promise((r) => {
     old.once('exit', r);
     old.kill();
   });
-  child = startServer();
+  child = startServer(extraEnv);
   return waitUp();
 }
 
@@ -445,6 +446,117 @@ section('13. 服务重启不会把陌生盒子变成激活的');
     403,
   );
   eq('配好的盒子重启之后照样能用', (await call('GET', '/api/admin/me', { token: BOSS })).status, 200);
+}
+
+// ------------------------------------------------------------ 设备密钥
+
+section('14. 设备密钥：光知道设备号冒充不了一台盒子');
+
+/*
+ * 原来盒子是谁只看它报上来的设备号，而设备号印在电视的「关于」页上、后台
+ * 表里也有 —— 谁知道设备号谁就能冒充这台盒子看电视、拿带线路口令的播放地址、
+ * 以那间房的名义点餐、看见住客姓名。
+ */
+{
+  const K = (c) => c.repeat(64); // 64 位十六进制：'a' * 64 这种
+  const as = async (method, path, { id, key, body } = {}) => {
+    const r = await fetch(BASE + path, {
+      method,
+      headers: {
+        ...(id ? { 'X-Device-Id': id } : {}),
+        ...(key ? { 'X-Device-Key': key } : {}),
+        ...(body ? { 'Content-Type': 'application/json' } : {}),
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    let data = null;
+    try {
+      data = await r.json();
+    } catch {
+      /* 空 */
+    }
+    return { status: r.status, data };
+  };
+  const hi = (id, key, extra = {}) => as('POST', '/api/device/hello', { id, key, body: { deviceId: id, ...extra } });
+
+  // --- 一台新盒子：第一次报到认下钥匙，配好之后就只认这把
+  const first = await hi('dk-box-1', K('a'));
+  eq('新盒子第一次来：没激活（还没配）', first.data?.activated, false);
+  await call('POST', '/api/admin/devices/dk-box-1?property=1', { token: BOSS, body: { roomId: '501' } });
+  await call('POST', '/api/admin/rooms/501/checkin?property=1', { token: BOSS, body: { guestName: '王五' } });
+  eq('配好之后带着自己的钥匙：激活', (await hi('dk-box-1', K('a'))).data?.activated, true);
+  eq('带着自己的钥匙要状态 → 200', (await as('GET', '/api/device/state', { id: 'dk-box-1', key: K('a') })).status, 200);
+
+  eq('**只报设备号、不带钥匙 → 401**', (await as('GET', '/api/device/state', { id: 'dk-box-1' })).status, 401);
+  eq('**带一把别的钥匙 → 401**', (await as('GET', '/api/device/state', { id: 'dk-box-1', key: K('b') })).status, 401);
+  eq('**拿别的钥匙要播放地址 → 401**', (await as('GET', '/api/play/1', { id: 'dk-box-1', key: K('b') })).status, 401);
+  eq('**拿别的钥匙下单 → 401**', (await as('POST', '/api/service/order', {
+    id: 'dk-box-1', key: K('b'), body: { items: [{ id: 1, qty: 1 }] },
+  })).status, 401);
+
+  // --- 拿着别的钥匙来报到：什么都不告诉它，只给一个码
+  const imp = await hi('dk-box-1', K('b'));
+  eq('**别的钥匙来报到：不激活**', imp.data?.activated, false);
+  eq('给的是「请前台重新确认」', imp.data?.rekey, true);
+  ok('有一个六位的码', /^\d{6}$/.test(String(imp.data?.pairingCode)), JSON.stringify(imp.data));
+  ok(
+    '**回给它的东西里没有房间、住客、酒店**',
+    !/王五|501|A 店|platform-line/.test(JSON.stringify(imp.data)),
+    JSON.stringify(imp.data),
+  );
+  eq('同一把钥匙再来，码不变（电视重启、按刷新，屏幕上的码不能跳）',
+    (await hi('dk-box-1', K('b'))).data?.pairingCode, imp.data?.pairingCode);
+  eq('**真的那台盒子不受影响，照样能用**',
+    (await as('GET', '/api/device/state', { id: 'dk-box-1', key: K('a') })).status, 200);
+
+  const home = await as('GET', '/api/app/home', { id: 'dk-box-1', key: K('b') });
+  ok('拿别的钥匙问首页配置：不告诉它是哪家酒店', !/A 店/.test(JSON.stringify(home.data)), JSON.stringify(home.data).slice(0, 200));
+
+  // --- 前台对着码确认
+  const deskTicket = await login('desk01');
+  const bobTicket = await login('bob');
+  eq('码不对 → 400', (await call('POST', '/api/admin/devices/dk-box-1/rekey', {
+    token: deskTicket, body: { code: '000000' },
+  })).status, 400);
+  eq('**别家的前台确认不了这一家的盒子**', (await call('POST', '/api/admin/devices/dk-box-1/rekey', {
+    token: bobTicket, body: { code: imp.data?.pairingCode },
+  })).status, 404);
+  const listed = (await call('GET', '/api/admin/rooms', { token: deskTicket })).data.devices.find((d) => d.deviceId === 'dk-box-1');
+  eq('后台房间表里看得见「有电视在等确认」', listed?.rekeyPending > 0, true);
+  eq('**这一家的前台照着码确认 → 200**', (await call('POST', '/api/admin/devices/dk-box-1/rekey', {
+    token: deskTicket, body: { code: imp.data?.pairingCode },
+  })).status, 200);
+  eq('确认之后新钥匙能用', (await as('GET', '/api/device/state', { id: 'dk-box-1', key: K('b') })).status, 200);
+  eq('**确认之后旧钥匙作废**', (await as('GET', '/api/device/state', { id: 'dk-box-1', key: K('a') })).status, 401);
+  eq('同一个码用第二次 → 400', (await call('POST', '/api/admin/devices/dk-box-1/rekey', {
+    token: deskTicket, body: { code: imp.data?.pairingCode },
+  })).status, 400);
+
+  // --- 老盒子：还没认下过钥匙，宽限期里照旧能用；一带钥匙来报到就认下
+  await hi('dk-legacy-1'); // 不带钥匙 = 还没换上新界面的老盒子
+  await call('POST', '/api/admin/devices/dk-legacy-1?property=1', { token: BOSS, body: { roomId: '502' } });
+  eq('老盒子不带钥匙：宽限期里照旧 200', (await as('GET', '/api/device/state', { id: 'dk-legacy-1' })).status, 200);
+  eq('老盒子换上新界面、带着钥匙来报到：激活', (await hi('dk-legacy-1', K('c'))).data?.activated, true);
+  eq('**认下之后，再不带钥匙就 401**', (await as('GET', '/api/device/state', { id: 'dk-legacy-1' })).status, 401);
+  eq('带着认下的钥匙照旧 200', (await as('GET', '/api/device/state', { id: 'dk-legacy-1', key: K('c') })).status, 200);
+
+  // --- MAC 不再能让一台新设备号接管一间房
+  await hi('dk-mac-old', K('d'), { mac: '3C:A0:67:00:11:22' });
+  await call('POST', '/api/admin/devices/dk-mac-old?property=1', { token: BOSS, body: { roomId: '503' } });
+  const thief = await hi('dk-mac-new', K('e'), { mac: '3C:A0:67:00:11:22' });
+  eq('**报上别人的 MAC 的新设备号：不会被自动接进那间房**', thief.data?.activated, false);
+  ok('它拿到的是普通配对码', /^\d{6}$/.test(String(thief.data?.pairingCode)));
+  const hint = (await call('GET', '/api/admin/rooms?property=1', { token: BOSS })).data.devices.find((d) => d.deviceId === 'dk-mac-new');
+  ok('平台在后台看得见「MAC 和 503 那台一样」的提示', /503/.test(String(hint?.macMatch)), JSON.stringify(hint));
+
+  // --- 宽限期过了：没钥匙的老盒子也 401；但它一带钥匙来报到就会被认下（自己接回来）
+  await hi('dk-legacy-2');
+  await call('POST', '/api/admin/devices/dk-legacy-2?property=1', { token: BOSS, body: { roomId: '504' } });
+  ok('重启成「宽限期已过」', await restartServer({ DEVICE_KEY_GRACE_UNTIL: '1' }), stderr.slice(-300));
+  eq('**宽限期过了，老盒子不带钥匙 → 401**', (await as('GET', '/api/device/state', { id: 'dk-legacy-2' })).status, 401);
+  eq('它带着钥匙来报到：被认下、激活', (await hi('dk-legacy-2', K('f'))).data?.activated, true);
+  eq('之后带着钥匙照旧 200', (await as('GET', '/api/device/state', { id: 'dk-legacy-2', key: K('f') })).status, 200);
+  eq('认下过钥匙的盒子不受宽限期影响', (await as('GET', '/api/device/state', { id: 'dk-box-1', key: K('b') })).status, 200);
 }
 
 // ------------------------------------------------------------ 结果

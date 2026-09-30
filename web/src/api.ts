@@ -157,6 +157,11 @@ export interface HomeConfig {
 export interface Session {
   activated: boolean;
   pairingCode: string | null;
+  /**
+   * 这台盒子拿的钥匙服务端不认（清过数据、重装过）：屏幕上的码要给前台
+   * 重新确认，而不是「配对」。两者屏幕长得一样，说的话不一样。
+   */
+  rekey?: boolean;
   deviceId: string;
   room: { id: string; guestName: string | null; building: string | null } | null;
   profile: { status: string; expiresAt: string | null; maxConnections: string | null } | null;
@@ -296,11 +301,44 @@ export function adultUnlocked(): boolean {
   return adultToken !== null;
 }
 
+/**
+ * 这台盒子自己的钥匙。
+ *
+ * 设备号不是秘密（「关于」页上印着、后台表里也有），所以光凭它认人，谁知道
+ * 设备号谁就能冒充这台盒子。钥匙是**盒子自己生成、只存在这台盒子上**的
+ * 32 字节随机数，每个请求都带着；服务端第一次见到时认下，之后对不上就不认。
+ *
+ * 存在 localStorage：APK 升级（同一把签名钥匙）会保留它；清应用数据、重装会
+ * 丢 —— 那时候电视上会出一个码，前台在后台对着码确认一下就接回来了。
+ */
+const KEY_STORE = 'ott.deviceKey';
+let memoryKey: string | null = null;
+
+export function deviceKey(): string {
+  if (memoryKey) return memoryKey;
+  try {
+    const saved = localStorage.getItem(KEY_STORE);
+    if (saved && /^[0-9a-f]{64}$/.test(saved)) return (memoryKey = saved);
+  } catch {
+    /* 存不了就只在这一次开机里用 —— 下次开机会走「请前台确认」 */
+  }
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  memoryKey = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  try {
+    localStorage.setItem(KEY_STORE, memoryKey);
+  } catch {
+    /* 同上 */
+  }
+  return memoryKey;
+}
+
 async function send(path: string, init: RequestInit): Promise<Response> {
   return fetch(BASE + path, {
     ...init,
     headers: {
       'X-Device-Id': deviceId(),
+      'X-Device-Key': deviceKey(),
       ...(adultToken ? { 'X-Adult-Token': adultToken } : {}),
       ...(init.body ? { 'Content-Type': 'application/json' } : {}),
       ...(init.headers ?? {}),
@@ -317,7 +355,8 @@ async function req<T>(path: string, init: RequestInit = {}, retry = true): Promi
   // The box is known to the server under some id; if it ever asks with a
   // different one - a shell upgrade, cleared storage, a bridge that appeared
   // late - re-introduce it once rather than showing an empty screen.
-  if (res.status === 403 && retry && path !== '/api/device/hello') {
+  // 401 也算：宽限期过了还没认下钥匙的盒子，重新报到一次就会认下。
+  if ((res.status === 403 || res.status === 401) && retry && path !== '/api/device/hello') {
     healing ??= req('/api/device/hello', {
       method: 'POST',
       body: JSON.stringify({ deviceId: deviceId(), mac: deviceMac() }),

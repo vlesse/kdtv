@@ -116,14 +116,26 @@ export function roster(pid = null, { includeUnassigned = false } = {}) {
       SELECT d.device_id, d.mac, d.code, d.room_id, d.line_user, d.label,
              d.last_seen, d.created_at, d.adult_allowed, d.content_until, d.line_pinned,
              d.property_id, p.name AS property_name,
-             r.building, r.floor, r.guest_name, r.checked_in
+             r.building, r.floor, r.guest_name, r.checked_in,
+             d.key_hash IS NOT NULL AS keyed,
+             (SELECT COUNT(*) FROM device_rekeys k
+               WHERE k.device_id = d.device_id AND k.created_at >= ?) AS rekeys,
+             -- 还没归属的盒子：它的 MAC 和哪台已经配好的盒子一样？多半是那台
+             -- 恢复过出厂。只提示，不自动接管（见 devices.js 的 adopt）。
+             -- 没归属的盒子只有平台看得见，所以这里不会把 A 店的房号给 B 店看。
+             CASE WHEN d.property_id IS NULL AND d.mac IS NOT NULL AND d.mac <> '' THEN
+               (SELECT p2.name || ' · ' || COALESCE(o.room_id, '未分房')
+                  FROM devices o JOIN properties p2 ON p2.id = o.property_id
+                 WHERE o.mac = d.mac AND o.device_id <> d.device_id
+                 ORDER BY o.last_seen DESC LIMIT 1)
+             END AS mac_match
         FROM devices d
         LEFT JOIN properties p ON p.id = d.property_id
         LEFT JOIN rooms r ON r.room_id = d.room_id AND r.property_id = d.property_id
        ${where}
        ORDER BY d.property_id, d.room_id IS NULL, d.room_id, d.created_at
     `)
-    .all(...(pid == null ? [] : [pid]))
+    .all(now() - 24 * 3600, ...(pid == null ? [] : [pid]))
     .map((d) => ({
       deviceId: d.device_id,
       propertyId: d.property_id,
@@ -146,6 +158,10 @@ export function roster(pid = null, { includeUnassigned = false } = {}) {
       floor: d.floor,
       guestName: d.guest_name,
       checkedIn: Boolean(d.checked_in),
+      // 设备密钥：认下过没有、有没有电视在等前台确认（见 devices.js）。
+      keyed: Boolean(d.keyed),
+      rekeyPending: Number(d.rekeys) || 0,
+      macMatch: d.mac_match ?? null,
     }));
 
   const rooms = db

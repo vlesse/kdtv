@@ -1507,6 +1507,7 @@
           (d) => Boolean(d.lastSeen) && Date.now() / 1000 - d.lastSeen > STALE_DAYS * 86400,
         ).length;
         const unbound = devices.filter((d) => !d.bound).length;
+        const rekeying = devices.filter((d) => d.rekeyPending).length;
         const assigned = devices.filter((d) => d.roomId).length;
         const live = spots.filter((x) => x.active && x.image).length;
 
@@ -1544,6 +1545,14 @@
 
         if (pending) {
           add('bad', pending + ' 单还没处理', '客人在房间里等着', 'service', '去看单');
+        }
+        if (rekeying) {
+          add(
+            'bad',
+            rekeying + ' 台电视在等前台重新确认',
+            '电视上有一个码。照着那台电视上的码在「房间与设备」里点确认',
+            'rooms',
+          );
         }
         if (unbound) {
           add('warn', unbound + ' 台盒子还没分房', '填上房间号就能用，不用去盒子上操作', 'rooms');
@@ -2684,9 +2693,66 @@
           user.focus();
         };
 
-        const status = d.bound
-          ? el('span', { className: 'pill live', textContent: '已激活' })
-          : el('span', { className: 'pill wait', textContent: '待配对 ' + (d.code || '') });
+        const status = el('div', null,
+          d.bound
+            ? el('span', { className: 'pill live', textContent: '已激活' })
+            : el('span', { className: 'pill wait', textContent: '待配对 ' + (d.code || '') }),
+        );
+
+        /* 设备密钥（见 bff/src/devices.js）。
+           还没认下钥匙的老盒子：它下次换上新界面就会自己认下，这里只是让人
+           看得见迁移走到哪了。 */
+        if (d.bound && !d.keyed) {
+          status.append(' ', el('span', {
+            className: 'pill',
+            textContent: '旧版认证',
+            title: '这台盒子还没换上设备密钥。它下次换上新界面会自己认下，不用管。',
+          }));
+        }
+
+        /* 电视上显示「请前台重新确认」和一个码。只在**眼前这台电视**真的显示了
+           这个码的时候才确认 —— 别人拿着这台的设备号来试，也会在这里留一条，
+           但他的码只出现在他自己的屏幕上。 */
+        if (d.rekeyPending) {
+          const code = el('input', {
+            type: 'text', inputMode: 'numeric', maxLength: 6,
+            placeholder: '电视上的码', style: 'width:92px',
+          });
+          const go = el('button', { className: 'primary', textContent: '确认' });
+          go.onclick = async () => {
+            go.disabled = true;
+            try {
+              await apiRoster('/devices/' + encodeURIComponent(d.deviceId) + '/rekey', {
+                method: 'POST',
+                body: JSON.stringify({ code: code.value.trim() }),
+              });
+              toast('这台电视接回来了');
+              renderRooms();
+            } catch (e) {
+              toast(e.message, true);
+              go.disabled = false;
+            }
+          };
+          go.style.cssText = 'padding:4px 10px;font-size:12px';
+          status.append(el('div', { style: 'margin-top:6px;display:flex;gap:6px;align-items:center;white-space:nowrap' },
+            el('span', {
+              className: 'pill wait',
+              textContent: '待重新确认',
+              title: '只在这间房的电视上真的显示了这个码时才确认',
+            }),
+            code, go,
+          ));
+        }
+
+        /* 没归属的新盒子，MAC 和某台已经配好的一样：多半是那台恢复过出厂。
+           原来会自动接管（连房间一起），那是个洞 —— 现在只提示，人来决定。 */
+        if (!d.propertyId && d.macMatch) {
+          status.append(el('div', {
+            className: 'hint',
+            style: 'margin-top:4px',
+            textContent: 'MAC 和「' + d.macMatch + '」那台一样，可能是它重置过',
+          }));
+        }
 
         const save = el('button', { className: 'primary', textContent: '保存' });
         save.onclick = async () => {

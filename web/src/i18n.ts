@@ -65,6 +65,7 @@ const zh: Dict = {
 
   'activate.kicker': '设备开通',
   'activate.title': '开通码',
+  'activate.rekey': '这台电视需要前台重新确认一下。请把上面的码告诉前台。',
   'activate.hint': '请把这个号码告诉服务人员，以开通您房间的电视。',
   'activate.refresh': '刷新',
 
@@ -220,6 +221,7 @@ const en: Dict = {
 
   'activate.kicker': 'Device Activation',
   'activate.title': 'Activation Code',
+  'activate.rekey': 'This TV needs to be confirmed again by the front desk. Please tell them the code above.',
   'activate.hint': 'Give this code to staff to activate the TV in your room.',
   'activate.refresh': 'Refresh',
 
@@ -377,6 +379,7 @@ const km: Dict = {
 
   'activate.kicker': 'ការបើកដំណើរការឧបករណ៍',
   'activate.title': 'លេខកូដបើកដំណើរការ',
+  'activate.rekey': 'ទូរទស្សន៍នេះត្រូវការឱ្យផ្នែកទទួលភ្ញៀវបញ្ជាក់ម្ដងទៀត។ សូមប្រាប់លេខកូដខាងលើទៅផ្នែកទទួលភ្ញៀវ។',
   'activate.hint': 'សូមប្រាប់លេខកូដនេះទៅបុគ្គលិក ដើម្បីបើកដំណើរការទូរទស្សន៍ក្នុងបន្ទប់របស់អ្នក។',
   'activate.refresh': 'ផ្ទុកឡើងវិញ',
 
@@ -532,6 +535,7 @@ const id: Dict = {
 
   'activate.kicker': 'Aktivasi Perangkat',
   'activate.title': 'Kode Aktivasi',
+  'activate.rekey': 'TV ini perlu dikonfirmasi ulang oleh resepsionis. Sampaikan kode di atas kepada resepsionis.',
   'activate.hint': 'Berikan kode ini kepada petugas untuk mengaktifkan TV di kamar Anda.',
   'activate.refresh': 'Segarkan',
 

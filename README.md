@@ -108,7 +108,7 @@ node scripts/selfcheck.js       # 88 项：收款、发货、防重复发货
 node scripts/tenancy-check.js   # 150 项：A 店看不看得见 B 店的东西；闲置盒子清理
 node scripts/ui-check.js        # 12 项：单文件页面能不能跑、hidden 藏不藏得住、四种语言齐不齐
 node scripts/auth-check.js      # 59 项：角色、会话、限速、记录、中继不是开放代理
-node scripts/api-auth-check.js  # 89 项：真起一个服务、真发 HTTP 去撞门（含编码绕过）
+node scripts/api-auth-check.js  # 130 项：真起一个服务、真发 HTTP 去撞门（含编码绕过、设备密钥、重启）
 ```
 
 `tenancy-check` 尤其重要。多租户的错误**线上不会报错**，只会是 B 店的客人发现

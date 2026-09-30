@@ -20,7 +20,19 @@ import { createHash } from 'node:crypto';
 import { config } from './config.js';
 import { db, now } from './db.js';
 import * as xui from './xui.js';
-import { hello, bind, bindByCode, getDevice, listDevices, isBound, sweepStale } from './devices.js';
+import {
+  hello,
+  bind,
+  bindByCode,
+  getDevice,
+  listDevices,
+  isBound,
+  sweepStale,
+  keyFrom,
+  keyVerdict,
+  adoptKey,
+  requestRekey,
+} from './devices.js';
 import { seedIfEmpty } from './seed.js';
 import * as weather from './weather.js';
 import * as settings from './settings.js';
@@ -155,6 +167,15 @@ function requireLine(req, reply) {
     return null;
   }
   const dev = getDevice(String(deviceId));
+  /*
+   * 先认钥匙，再说激活没激活 —— 反过来的话，一个拿着别人设备号来试探的人
+   * 能从 403 和 401 的区别里读出「这台盒子存在、而且配好了」。
+   * 电视端收到 401 会自己重新报到一次（见 web/src/api.ts）。
+   */
+  if (dev && keyVerdict(dev, keyFrom(req)) === 'bad') {
+    reply.code(401).send({ error: 'device key mismatch' });
+    return null;
+  }
   if (!dev || !isBound(dev)) {
     reply.code(403).send({ error: 'device not activated', deviceId });
     return null;
@@ -209,7 +230,22 @@ app.post('/api/device/hello', async (req, reply) => {
     return reply.code(429).send({ error: '新设备太多，稍后再试' });
   }
 
-  const dev = hello({ deviceId, mac, label });
+  /*
+   * 钥匙。认下过钥匙的盒子拿着对不上的钥匙来（或者根本没带）：**这台盒子的
+   * 任何东西都不告诉它** —— 房间、住客、酒店、线路。只给一个码，让电视把它
+   * 显示出来，等前台在后台对着码确认（devices.requestRekey / confirmRekey）。
+   */
+  const key = keyFrom(req);
+  const known = getDevice(deviceId);
+  if (known?.key_hash && keyVerdict(known, key) !== 'ok') {
+    const code = requestRekey(deviceId, key);
+    if (!code) return reply.code(401).send({ error: 'device key required' });
+    return { activated: false, rekey: true, pairingCode: code, deviceId };
+  }
+
+  let dev = hello({ deviceId, mac, label });
+  // 第一次见到钥匙（新盒子，或者还没认下过钥匙的老盒子）：认下。
+  if (key && !dev.key_hash && adoptKey(deviceId, key)) dev = getDevice(deviceId);
   const bound = isBound(dev);
 
   let profile = null;
@@ -264,8 +300,9 @@ app.post('/api/device/hello', async (req, reply) => {
  */
 function publicDevice(dev) {
   if (!dev) return dev;
-  const { line_pass, ...rest } = dev;
-  return { ...rest, bound: Boolean(dev.line_user && line_pass) };
+  // 线路口令和钥匙的哈希都不往外给；给一个「认下过钥匙没有」就够运营看了。
+  const { line_pass, key_hash, ...rest } = dev;
+  return { ...rest, bound: Boolean(dev.line_user && line_pass), keyed: Boolean(key_hash) };
 }
 
 // Operator-facing pairing, behind the console token (see admin.js).
@@ -927,7 +964,9 @@ app.get('/api/weather', async () => (await weather.current()) ?? { unavailable: 
  * 认不出来就给一份中性的默认，而不是随便挑一家的品牌。
  */
 app.get('/api/app/home', async (req) => {
-  const dev = req.headers['x-device-id'] ? getDevice(String(req.headers['x-device-id'])) : null;
+  const claimed = req.headers['x-device-id'] ? getDevice(String(req.headers['x-device-id'])) : null;
+  // 钥匙对不上的，当它没报设备号 —— 不告诉它是哪家酒店。
+  const dev = claimed && keyVerdict(claimed, keyFrom(req)) !== 'bad' ? claimed : null;
   const pid = dev?.property_id ?? null;
 
   // 认不出这台盒子属于谁，就给一份中性的默认 —— 不是随手挑一家的品牌。

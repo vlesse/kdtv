@@ -375,6 +375,20 @@ addColumn('properties', 'panel_id', 'INTEGER');
  */
 addColumn('devices', 'line_pinned', 'INTEGER NOT NULL DEFAULT 0');
 
+// 设备密钥（见 devices.js）：只存 sha256，钥匙本身只在盒子上。
+addColumn('devices', 'key_hash', 'TEXT');
+
+// 钥匙对不上的盒子在等前台确认：码 → 那台电视出示的钥匙。
+db.exec(`
+  CREATE TABLE IF NOT EXISTS device_rekeys (
+    device_id  TEXT NOT NULL,
+    code       TEXT NOT NULL,
+    key_hash   TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  )
+`);
+db.exec('CREATE INDEX IF NOT EXISTS idx_device_rekeys_dev ON device_rekeys(device_id, code)');
+
 /**
  * 把现在配置里那台面板录成第一行。
  *
