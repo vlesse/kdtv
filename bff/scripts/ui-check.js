@@ -113,6 +113,30 @@ for (const rel of PAGES) {
   }
 }
 
+// -------------------------------------------------- 电视界面：四种语言齐不齐
+
+/*
+ * 字典里少一条不会报错 —— t() 会退回英文，再没有就把 key 原样摆出来。
+ * 所以漏翻只能靠这里撞：真出过，高棉语和印尼语的「旅游周边」标题、
+ * 印尼语的「正在重连」都是英文，没人发现，因为说中文的人不会切到那两种语言。
+ */
+{
+  const i18n = readFileSync(join(root, '..', 'web', 'src', 'i18n.ts'), 'utf8');
+  const dicts = {};
+  for (const [, name, body] of i18n.matchAll(/const (\w+)\s*:\s*[^=]*=\s*\{([\s\S]*?)\n\};/g)) {
+    const keys = [...body.matchAll(/^\s*'([^']+)'\s*:/gm)].map((m) => m[1]);
+    if (keys.length > 20) dicts[name] = new Set(keys);
+  }
+  const langs = Object.keys(dicts);
+  ok(`i18n：找到四本字典（实际 ${langs.join('/') || '一本都没有'}）`, langs.length === 4);
+
+  const every = new Set(langs.flatMap((l) => [...dicts[l]]));
+  for (const l of langs) {
+    const miss = [...every].filter((k) => !dicts[l].has(k));
+    ok(`i18n：${l} 没有漏翻${miss.length ? ` —— 缺 ${miss.join(', ')}` : ''}`, miss.length === 0);
+  }
+}
+
 console.log(`\n${'─'.repeat(52)}`);
 if (fails.length === 0) {
   console.log(`全部通过：${passed} 项`);

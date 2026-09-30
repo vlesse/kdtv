@@ -71,6 +71,75 @@ const app = Fastify({
 await app.register(cors, { origin: true });
 await app.register(multipart, { limits: { fileSize: config.admin.maxUploadBytes, files: 1 } });
 
+/*
+ * 每一个响应都带的三个头。原来一个都没有。
+ *
+ *   nosniff        浏览器按我们给的类型处理，不自己猜。上传的文件是按扩展名
+ *                  给类型的，内容本身没人验过 —— 一个改名成 .jpg 的网页，
+ *                  靠的就是这一条才不会被当成网页打开。
+ *   不许被嵌       后台和前台是能改东西的页面。别人把它嵌进自己的页面、
+ *                  诱导已登录的人去点，这叫点击劫持。电视界面也不会被谁嵌，
+ *                  所以全站一律不许。
+ *   Referrer       跨站只带域名。播放地址的路径里有线路口令。
+ *
+ * 用 onSend 而不是写进 nginx：这样换一台机器、换一个反代都还在，
+ * 而且在仓库里看得见。
+ */
+app.addHook('onSend', async (req, reply, payload) => {
+  if (!reply.hasHeader('X-Content-Type-Options')) reply.header('X-Content-Type-Options', 'nosniff');
+  if (!reply.hasHeader('X-Frame-Options')) reply.header('X-Frame-Options', 'DENY');
+  if (!reply.hasHeader('Content-Security-Policy')) {
+    reply.header('Content-Security-Policy', "frame-ancestors 'none'");
+  }
+  if (!reply.hasHeader('Referrer-Policy')) reply.header('Referrer-Policy', 'strict-origin-when-cross-origin');
+  return payload;
+});
+
+/*
+ * 没被路由自己接住的错误，统一在这里说人话。
+ *
+ * 原来走的是 Fastify 默认的那一套，有三个毛病：
+ *
+ *   1. **面板连不上是 500。** 频道、片库、节目单三条接口直接把 `fetch failed`
+ *      抛出来，盒子拿到的是「服务器坏了」而不是「上游坏了」，日志按 error
+ *      级别每次刷一整段调用栈 —— 面板抖一下，真正的错误就被淹了。现在是 502。
+ *   2. **500 把内部异常原样回给调用方。** 比如
+ *      `Cannot read properties of undefined (reading 'role')` —— 对用户没用，
+ *      对探路的人有用。现在只回一句通用说明，细节进日志。
+ *   3. **人话放错了字段。** 默认错误体是 `{ error: 'Bad Request', message: '…' }`，
+ *      而后台、前台、电视三个客户端读的都是 `error`。所以没被接住的 4xx
+ *      （比如上传太大）在后台上显示成一句英文状态名。现在人话在 `error` 里。
+ */
+const UPSTREAM_CODES = new Set([
+  'ENOTFOUND', 'EAI_AGAIN', 'ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'EHOSTUNREACH',
+  'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT', 'UND_ERR_SOCKET',
+]);
+
+app.setErrorHandler((err, req, reply) => {
+  const code = err?.cause?.code ?? err?.code;
+  const upstream =
+    err?.name === 'AbortError' ||
+    err?.name === 'TimeoutError' ||
+    (err instanceof TypeError && /fetch failed/i.test(err.message)) ||
+    UPSTREAM_CODES.has(code);
+  if (upstream) {
+    req.log.warn({ url: req.url, err: err.message, code }, '上游连不上');
+    return reply.code(502).send({ error: 'upstream unavailable', statusCode: 502 });
+  }
+
+  const status = Number(err?.statusCode) >= 400 ? Number(err.statusCode) : 500;
+  if (status >= 500) {
+    req.log.error({ err }, '没接住的错误');
+    return reply.code(status).send({ error: 'internal error', statusCode: status });
+  }
+
+  let message = err.message;
+  if (err.code === 'FST_REQ_FILE_TOO_LARGE') {
+    message = `文件太大，上限是 ${Math.round(config.admin.maxUploadBytes / 1048576)} MB`;
+  }
+  return reply.code(status).send({ error: message, statusCode: status, ...(err.code ? { code: err.code } : {}) });
+});
+
 seedIfEmpty();
 registerAdmin(app);
 registerRelay(app);

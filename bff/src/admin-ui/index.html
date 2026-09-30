@@ -3314,6 +3314,8 @@
       };
 
       async function loadExplore() {
+        // 前台够不着这一页（服务端白名单里没有），别替他去撞一个 403。
+        if (me?.role === 'desk') return;
         try {
           spots = (await api('/explore')).spots;
           draftSpot = null;
@@ -3423,6 +3425,7 @@
       }
 
       async function loadPay() {
+        if (me?.role === 'desk') return;
         try {
           payData = await api('/pay');
           renderPay();

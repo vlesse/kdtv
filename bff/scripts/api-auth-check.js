@@ -354,6 +354,43 @@ ok('**连着刷新设备号，会被限速**', first429 !== -1, `一路都是 ${
 ok('限速之后不会再放行新的', first429 === -1 || statuses.slice(first429).every((s) => s === 429));
 eq('**已经认识的盒子不受限速影响**', await helloRaw({ deviceId: 'check-box-1' }), 200);
 
+// ------------------------------------------------------------ 安全响应头
+
+section('11. 每个响应都带安全头');
+
+// 原来一个都没有。后台是能改东西的页面，被别人嵌进去诱导点击就是点击劫持。
+for (const p of ['/api/health', '/admin/', '/desk/', '/api/admin/me']) {
+  const r = await fetch(BASE + p);
+  eq(`${p} 不许被嵌（X-Frame-Options）`, r.headers.get('x-frame-options'), 'DENY');
+  eq(`${p} 不许浏览器猜类型（nosniff）`, r.headers.get('x-content-type-options'), 'nosniff');
+}
+
+// ------------------------------------------------------------ 错误怎么说
+
+section('12. 出错的时候说人话、状态码说实话');
+
+// 这套自检不接面板，频道表一定取不到 —— 正好拿来测「上游连不上」。
+{
+  const r = await fetch(BASE + '/api/channels', { headers: { 'X-Device-Id': 'check-box-1' } });
+  const body = await r.json().catch(() => ({}));
+  eq('**面板连不上是 502，不是 500**', r.status, 502);
+  ok('**不把内部异常原样回给调用方**', !/fetch failed|ENOTFOUND|getaddrinfo/i.test(JSON.stringify(body)), JSON.stringify(body));
+}
+{
+  const r = await fetch(BASE + '/api/device/hello', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{not json',
+  });
+  const body = await r.json().catch(() => ({}));
+  eq('坏 JSON 是 400', r.status, 400);
+  ok(
+    '**人话在 error 字段里（三个客户端读的都是它），不是一句 "Bad Request"**',
+    typeof body.error === 'string' && body.error !== 'Bad Request' && body.error.length > 10,
+    JSON.stringify(body),
+  );
+}
+
 // ------------------------------------------------------------ 结果
 
 console.log('\n' + '─'.repeat(52));
