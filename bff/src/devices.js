@@ -150,3 +150,31 @@ export function isBound(dev) {
   // 会被当成没激活 —— 它的房间、菜单、计费都无处可查。
   return Boolean(dev?.line_user && dev?.line_pass && dev?.property_id);
 }
+
+/**
+ * 清掉「从来没用起来过」的盒子。
+ *
+ * 开机报到不要凭据，所以谁拿浏览器打开电视界面都会留下一行：线上实测
+ * 差不多每天一台，多半是 AWS 上的链接预览和扫描器，偶尔是真人。它们
+ * 停在配对码那一屏，什么都看不了，但会一直挂在后台的房间表里，还占着
+ * 一个六位的配对码。
+ *
+ * **只删真正什么都没有的**：没房间、没线路、没单独指定过线路、没成人授权、
+ * 没买过观看权，而且一个月没再出现。任何一样被人动过的盒子都不碰 ——
+ * 就算它是真的一台盒子被误删了，下次开机也只是重新报到、重新出一个码。
+ */
+export function sweepStale(days = 30) {
+  const cutoff = now() - days * 86400;
+  const r = db
+    .prepare(
+      `DELETE FROM devices
+        WHERE room_id IS NULL
+          AND line_user IS NULL
+          AND COALESCE(line_pinned, 0) = 0
+          AND COALESCE(adult_allowed, 0) = 0
+          AND COALESCE(content_until, 0) = 0
+          AND last_seen < ?`,
+    )
+    .run(cutoff);
+  return Number(r.changes);
+}

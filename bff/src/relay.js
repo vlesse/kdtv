@@ -209,7 +209,17 @@ export function registerRelay(app) {
     if (target.protocol !== 'http:' && target.protocol !== 'https:') {
       return reply.code(400).send({ error: 'bad scheme' });
     }
-    if (entry.origins.size && !entry.origins.has(target.origin)) {
+    /*
+     * **白名单是空的时候也不放行。**
+     *
+     * 原来写的是 `origins.size && !origins.has(...)` —— token 刚发出来、主播放
+     * 列表还没取过的那一段时间里，白名单是空的，这一条就等于没有：拿着一个
+     * 有效 token 抢在前面请求 `/u/<任意地址>`，服务器就替你去取，内网也行。
+     *
+     * 合法的流程不会走到空白名单这里：`/u/` 地址只可能出现在改写过的播放
+     * 列表里，而改写那一步（admit）已经先把来源登记进去了。
+     */
+    if (!entry.origins.has(target.origin)) {
       return reply.code(403).send({ error: 'origin not allowed' });
     }
 

@@ -6,7 +6,10 @@
   "license": "AGPL-3.0-or-later",
   "author": "lngsuan (https://t.me/lngsuan)",
   "homepage": "https://github.com/vlesse/kdtv",
-  "repository": { "type": "git", "url": "https://github.com/vlesse/kdtv.git" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vlesse/kdtv.git"
+  },
   "type": "module",
   "scripts": {
     "dev": "node --watch src/server.js",
@@ -15,7 +18,7 @@
   "dependencies": {
     "@fastify/cors": "^10.0.2",
     "@fastify/multipart": "^9.4.0",
-    "@fastify/static": "^8.0.4",
+    "@fastify/static": "^10.1.5",
     "fastify": "^5.2.1",
     "qrcode": "^1.5.4"
   }

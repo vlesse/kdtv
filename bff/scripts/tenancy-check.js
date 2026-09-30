@@ -512,6 +512,46 @@ ok('英文名缺了会报错', expThrew !== null);
 eq('A 有内容，首页那一格该出现', explore.any(A.id), true);
 eq('**B 没内容，那一格就不存在**', explore.any(C.id + 999), false);
 
+// ------------------------------------------------------- 闲置盒子的清理
+
+section('16. 清理从没用起来过的盒子');
+
+/*
+ * 开机报到不要凭据，谁用浏览器打开电视界面都会留一行。devices.sweepStale()
+ * 只删**真正什么都没有**的 —— 这里要证明的是后半句：动过一点的都不碰。
+ */
+const LONG_AGO = now() - 45 * 86400;
+const plant = (id, extra = {}) => {
+  devices.hello({ deviceId: id });
+  const cols = Object.keys(extra);
+  if (cols.length) {
+    db.prepare(`UPDATE devices SET ${cols.map((c) => `${c} = ?`).join(', ')} WHERE device_id = ?`).run(
+      ...cols.map((c) => extra[c]),
+      id,
+    );
+  }
+  db.prepare('UPDATE devices SET last_seen = ? WHERE device_id = ?').run(extra.last_seen ?? LONG_AGO, id);
+};
+
+plant('stale-nothing');
+plant('stale-but-recent', { last_seen: now() - 3 * 86400 });
+plant('stale-has-room', { room_id: '301', property_id: A.id });
+plant('stale-has-line', { line_user: 'u', line_pass: 'p', property_id: A.id });
+plant('stale-pinned', { line_pinned: 1 });
+plant('stale-adult', { adult_allowed: 1 });
+plant('stale-paid', { content_until: now() + 86400 });
+
+const removed = devices.sweepStale();
+const alive = (id) => Boolean(devices.getDevice(id));
+eq('**一个月没出现、什么都没有的，删了**', alive('stale-nothing'), false);
+ok('删掉的就是那一台（别的测试留下的盒子不受影响）', removed >= 1);
+eq('最近还出现过的不删', alive('stale-but-recent'), true);
+eq('**有房间的不删**', alive('stale-has-room'), true);
+eq('**有线路的不删**', alive('stale-has-line'), true);
+eq('单独指定过线路的不删', alive('stale-pinned'), true);
+eq('**有成人授权的不删**', alive('stale-adult'), true);
+eq('**买过观看权的不删**', alive('stale-paid'), true);
+
 // ---------------------------------------------------------------- 结果
 
 console.log(`\n${'─'.repeat(52)}`);

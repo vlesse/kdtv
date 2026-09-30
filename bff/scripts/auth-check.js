@@ -187,6 +187,78 @@ ok('记得下动了什么', auth.auditList(A.id)[0].summary.includes('deviceId=a
 const payRow = auth.auditList(B.id)[0];
 ok('**密钥只记名字不记值**', payRow.summary.includes('secret=***') && !payRow.summary.includes('hunter2'));
 
+// ------------------------------------------------------------------ 中继
+
+section('7. 中继不是开放代理');
+
+/*
+ * 中继会替浏览器去取上游的分片。一个 token 只该打开它自己那条流的播放列表
+ * 指到的那几个来源 —— 否则拿着 token 就能让服务器替你去取任意地址，内网也行。
+ *
+ * 原来的检查是 `origins.size && !origins.has(...)`：token 刚发出来、主播放
+ * 列表还没取过的时候白名单是空的，这一条就等于没有。
+ */
+{
+  const { default: Fastify } = await import('fastify');
+  const relay = await import('../src/relay.js');
+  const app = Fastify({ routerOptions: { maxParamLength: 4000 } });
+  relay.registerRelay(app);
+  await app.ready();
+
+  const enc = (u) => Buffer.from(u, 'utf8').toString('base64url');
+  const hit = async (token, target) =>
+    (await app.inject({ method: 'GET', url: `/hls/${token}/u/${enc(target)}` })).statusCode;
+
+  const token = relay.mint('http://upstream.example.test/live/1.m3u8');
+
+  eq('**还没取过播放列表，拿它去够内网 → 403**', await hit(token, 'http://127.0.0.1:19090/api/sources'), 403);
+  eq('**够云主机的元数据地址 → 403**', await hit(token, 'http://169.254.169.254/computeMetadata/v1/'), 403);
+  eq('**连它自己那条流的来源也得先经过播放列表登记**', await hit(token, 'http://upstream.example.test/seg1.ts'), 403);
+  eq('不认识的 token → 404', await hit('0'.repeat(32), 'http://upstream.example.test/seg1.ts'), 404);
+  eq('不是 http(s) → 400', await hit(token, 'file:///etc/passwd'), 400);
+
+  /*
+   * 反过来也要证明：**正常看电视的那条路没被堵死**。
+   * 起一个本地的假上游，走一遍「主播放列表 → 改写 → 分片」。
+   */
+  const { createServer } = await import('node:http');
+  const upstream = createServer((req, res) => {
+    if (req.url === '/live/1.m3u8') {
+      res.writeHead(200, { 'Content-Type': 'application/vnd.apple.mpegurl' });
+      return res.end('#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXTINF:2,\nseg1.ts\n');
+    }
+    if (req.url === '/live/seg1.ts') {
+      res.writeHead(200, { 'Content-Type': 'video/mp2t' });
+      return res.end(Buffer.from([0x47, 0x40, 0x00, 0x10]));
+    }
+    res.writeHead(404).end();
+  });
+  await new Promise((r) => upstream.listen(0, '127.0.0.1', r));
+  const port = upstream.address().port;
+
+  const t2 = relay.mint(`http://127.0.0.1:${port}/live/1.m3u8`);
+  const index = await app.inject({ method: 'GET', url: `/hls/${t2}/index.m3u8` });
+  eq('主播放列表取得到', index.statusCode, 200);
+  const segLine = index.body.split('\n').find((l) => l.includes('/u/'));
+  ok('**分片地址被改写成走中继**', Boolean(segLine), index.body.slice(0, 200));
+  if (segLine) {
+    const seg = await app.inject({ method: 'GET', url: segLine.trim() });
+    eq('**改写之后的分片取得到（来源已经在播放列表那一步登记过）**', seg.statusCode, 200);
+    eq('取回来的是原样的字节', seg.rawPayload?.[0], 0x47);
+  }
+  eq(
+    '**同一个 token 去够别的来源，照样 403**',
+    await hit(t2, 'http://127.0.0.1:1/other'),
+    403,
+  );
+
+  // 先把长连接断干净再关 —— 不然 Windows 上 process.exit 时 libuv 会断言失败，
+  // 结果全绿、退出码却不稳。
+  upstream.closeAllConnections();
+  await new Promise((r) => upstream.close(r));
+  await app.close();
+}
+
 // ------------------------------------------------------------------ 结果
 
 console.log('\n' + '─'.repeat(52));
@@ -201,4 +273,7 @@ try {
 } catch {
   /* windows 上库还占着，删不掉就算了 —— 临时目录本来就是一次性的 */
 }
-process.exit(fails.length ? 1 : 0);
+// 不用 process.exit()：中继那一节用 fetch 连过本地上游，连接池还在收尾，
+// 在 Windows 上强退会让 libuv 断言失败 —— 结果全绿、退出码却是 127。
+// 设好退出码，让事件循环自己走完。
+process.exitCode = fails.length ? 1 : 0;

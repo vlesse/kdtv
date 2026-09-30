@@ -20,7 +20,7 @@ import { createHash } from 'node:crypto';
 import { config } from './config.js';
 import { db, now } from './db.js';
 import * as xui from './xui.js';
-import { hello, bind, bindByCode, getDevice, listDevices, isBound } from './devices.js';
+import { hello, bind, bindByCode, getDevice, listDevices, isBound, sweepStale } from './devices.js';
 import { seedIfEmpty } from './seed.js';
 import * as weather from './weather.js';
 import * as settings from './settings.js';
@@ -50,7 +50,8 @@ const app = Fastify({
    * its route and came back as a 404 from the catch-all - a stream that
    * fetched its playlist fine and then played nothing.
    */
-  maxParamLength: 4000,
+  // 放在 routerOptions 里：顶层的写法 fastify 5 已经在警告，6 会删掉。
+  routerOptions: { maxParamLength: 4000 },
 
   /*
    * nginx terminates TLS on this host and proxies in over loopback, so without
@@ -94,9 +95,50 @@ function requireLine(req, reply) {
 
 // ---------------------------------------------------------------- device
 
+/*
+ * 开机报到是**唯一一条不要任何凭据就能往库里写的接口** —— 它必须是：一台
+ * 全新的盒子什么都不知道，只知道自己的设备号。所以这里要自己把门：
+ *
+ *   **格式**  设备号是 ANDROID_ID（16 位十六进制）或者浏览器里生成的 web-xxxx。
+ *             原来什么都收：一个对象、一串 900KB 的字符都会被当成设备号存进去。
+ *   **速度**  同一个来源一小时最多新建这么多台。一家酒店在 NAT 后面是同一个
+ *             出口，装一栋楼一小时两三百台是真的会有的，所以给得宽；挡的是
+ *             脚本一晚上刷几十万行 —— 配对码只有六位数字，表里的未绑定盒子
+ *             多到一定程度，新盒子就再也分不到码了。
+ *
+ * 已经认识的盒子不受速度限制：开机报到本身是它每天都要做的事。
+ */
+const DEVICE_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._:-]{3,63}$/;
+// 可以用环境变量调：自检脚本要把它压到很小才测得出来。
+const NEW_DEVICES_PER_HOUR = Number(process.env.NEW_DEVICES_PER_HOUR) || 300;
+const newDeviceWindow = new Map(); // ip -> { n, since }
+
+function allowNewDevice(ip) {
+  const t = Date.now();
+  const w = newDeviceWindow.get(ip);
+  if (!w || t - w.since > 3600_000) {
+    newDeviceWindow.set(ip, { n: 1, since: t });
+    return true;
+  }
+  if (w.n >= NEW_DEVICES_PER_HOUR) return false;
+  w.n += 1;
+  return true;
+}
+
 app.post('/api/device/hello', async (req, reply) => {
-  const { deviceId, mac, label } = req.body ?? {};
-  if (!deviceId) return reply.code(400).send({ error: 'deviceId required' });
+  const body = req.body ?? {};
+  const deviceId = typeof body.deviceId === 'string' ? body.deviceId.trim() : '';
+  if (!DEVICE_ID_RE.test(deviceId)) {
+    return reply.code(400).send({ error: 'deviceId 格式不对' });
+  }
+  // MAC 和备注只是附带的：格式不对就当没给，别因为它们把开机拦下来。
+  const mac = typeof body.mac === 'string' && body.mac.length <= 32 ? body.mac : undefined;
+  const label = typeof body.label === 'string' ? body.label.slice(0, 60) : undefined;
+
+  if (!getDevice(deviceId) && !allowNewDevice(req.ip)) {
+    req.log.warn({ ip: req.ip }, '同一来源一小时内新建的盒子太多，先拒掉');
+    return reply.code(429).send({ error: '新设备太多，稍后再试' });
+  }
 
   const dev = hello({ deviceId, mac, label });
   const bound = isBound(dev);
@@ -1071,6 +1113,20 @@ startPreviewSweeper(app.log);
  */
 const artSweep = setInterval(() => art.sweep(app.log), 24 * 3600_000);
 artSweep.unref();
+
+// 一个月没用起来的盒子（见 devices.sweepStale），顺手把新建限速的窗口也清一清 ——
+// 那张表按来源 IP 记账，不清就是一张只增不减的表。
+const deviceSweep = setInterval(() => {
+  try {
+    const n = sweepStale();
+    if (n) app.log.info({ removed: n }, '清掉了从没激活过的盒子');
+  } catch (err) {
+    app.log.error({ err: err.message }, '清理闲置盒子失败');
+  }
+  const cutoff = Date.now() - 3600_000;
+  for (const [ip, w] of newDeviceWindow) if (w.since < cutoff) newDeviceWindow.delete(ip);
+}, 6 * 3600_000);
+deviceSweep.unref();
 
 /*
  * 过期的登录票和半年前的操作记录。

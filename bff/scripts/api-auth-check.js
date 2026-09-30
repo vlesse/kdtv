@@ -37,6 +37,8 @@ const child = spawn(process.execPath, [join(here, '..', 'src', 'server.js')], {
     ADMIN_TOKEN: TOKEN,
     PORT: String(PORT),
     LOG_LEVEL: 'silent',
+    // 开机报到的新建限速压小，第 10 节才测得出来（线上是 300/小时）。
+    NEW_DEVICES_PER_HOUR: '8',
   },
   stdio: ['ignore', 'ignore', 'pipe'],
 });
@@ -318,6 +320,39 @@ for (const [who, token, m, p] of [
   const r = await call(m, p, { token, body: m === 'POST' ? { enabled: true } : undefined });
   ok(`**${who} ${m} ${p}**`, r.status === 403, `实际 ${r.status}`);
 }
+
+// ------------------------------------------------------------ 开机报到
+
+section('10. 开机报到：唯一一条不要凭据就能写库的接口');
+
+const helloRaw = (body) =>
+  fetch(BASE + '/api/device/hello', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }).then((r) => r.status);
+
+for (const [label, id] of [
+  ['空的', ''],
+  ['一个对象', { $gt: '' }],
+  ['一个数组', ['a', 'b']],
+  ['太长', 'x'.repeat(200)],
+  ['带斜杠', '../../etc/passwd'],
+  ['带空格和尖括号', '<script>x</script>'],
+]) {
+  eq(`**设备号是${label} → 400**`, await helloRaw({ deviceId: id }), 400);
+}
+eq('正常的 ANDROID_ID 收', await helloRaw({ deviceId: 'a1b2c3d4e5f60718' }), 200);
+eq('浏览器生成的 web-xxxx 也收', await helloRaw({ deviceId: 'web-k3j2h1g0' }), 200);
+eq('MAC 格式怪就当没给，不拦开机', await helloRaw({ deviceId: 'a1b2c3d4e5f60719', mac: { bad: 1 } }), 200);
+
+// 新建限速：同一来源连着刷新设备号，到上限之后就是 429 —— 而且之后不会再放行
+const statuses = [];
+for (let i = 0; i < 12; i++) statuses.push(await helloRaw({ deviceId: `flood-${i}-${Date.now()}` }));
+const first429 = statuses.indexOf(429);
+ok('**连着刷新设备号，会被限速**', first429 !== -1, `一路都是 ${statuses.join(',')}`);
+ok('限速之后不会再放行新的', first429 === -1 || statuses.slice(first429).every((s) => s === 429));
+eq('**已经认识的盒子不受限速影响**', await helloRaw({ deviceId: 'check-box-1' }), 200);
 
 // ------------------------------------------------------------ 结果
 
